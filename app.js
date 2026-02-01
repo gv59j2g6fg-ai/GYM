@@ -1,5 +1,5 @@
 // Full exact original Strength/Fat Loss/Volume build
-const STORE_KEY="gym_template_rir_v9_layout_history_delete";
+const STORE_KEY="gym_template_rir_v10_history_x_pin";
 
 const INC_KG=2.5;
 
@@ -48,9 +48,10 @@ const workoutCard=document.getElementById('workoutCard');
 const manageCard=document.getElementById('manageCard');
 const historyCard=document.getElementById('historyCard');
 const dayTitle=document.getElementById('dayTitle');
+const daySelect=document.getElementById('daySelect');
+const daySelectHint=document.getElementById('daySelectHint');
 const tbody=document.getElementById('tbody');
 const note=document.getElementById('note');
-const dayTypeSel=document.getElementById('dayTypeSel');
 
 const loadPresetBtn=document.getElementById('loadPresetBtn');
 const copyPrevBtn=document.getElementById('copyPrevBtn');
@@ -66,7 +67,6 @@ const exList=document.getElementById('exList');
 
 const rangeSel=document.getElementById('rangeSel');
 const search=document.getElementById('search');
-const clearHistoryBtn=document.getElementById('clearHistoryBtn');
 const histList=document.getElementById('histList');
 const exportBtn=document.getElementById('exportBtn');
 const importFile=document.getElementById('importFile');
@@ -74,12 +74,33 @@ const exportBtn2=document.getElementById('exportBtn2');
 const importFile2=document.getElementById('importFile2');
 
 let currentDate=localISO();
-let currentTab='';
+let currentTab='strength';
 let followToday=true; // if true, app auto-opens/returns to today
 
 dateInput.value=currentDate;
+// Day type dropdown sync
+syncDaySelectForDate();
+
 
 function exById(id){return state.exercises.find(e=>e.id===id)||null;}
+
+function syncDaySelectForDate(){
+  const sess=state.sessions[currentDate];
+  const t=sess?.dayType||'';
+  if(daySelect){
+    daySelect.value=t||'';
+  }
+  if(t && (t==='strength'||t==='fatloss'||t==='volume')){
+    currentTab=t;
+  }
+}
+function canAutoLoadPreset(){
+  // Only auto-load when a day type is explicitly selected for this date, or when the date already has a dayType saved.
+  const sess=state.sessions[currentDate];
+  const savedType=sess?.dayType;
+  const selected=daySelect?daySelect.value:'';
+  return Boolean(selected||savedType);
+}
 function activeExercises(){return state.exercises.filter(e=>!e.archived);}
 function ensureSession(){
   if(!state.sessions[currentDate]) state.sessions[currentDate]={dayType:currentTab,rows:[]};
@@ -88,15 +109,22 @@ function ensureSession(){
   return s;
 }
 function setTitle(){
-  dayTitle.textContent=currentTab==='strength'?'Strength Day':currentTab==='fatloss'?'Fat Loss Day':currentTab==='volume'?'Volume Day':(currentTab==='manage'?'Manage':currentTab==='history'?'History':'Select day');
-  note.textContent="Switching Strength / Fat Loss / Volume auto-loads the preset. Log Weight + RIR.";
+  dayTitle.textContent=currentTab==='strength'?'Strength Day':currentTab==='fatloss'?'Fat Loss Day':currentTab==='volume'?'Volume Day':'Workout';
+  if(daySelect){
+    if(currentTab==='manage'||currentTab==='history'){
+      daySelect.disabled=true;
+      if(daySelectHint) daySelectHint.textContent='Day type selection is disabled in Manage/History.';
+    }else{
+      daySelect.disabled=false;
+      if(daySelectHint) daySelectHint.textContent='Pick a day type to load the preset for this date.';
+    }
+  }
+  note.textContent="Pick Strength / Fat Loss / Volume to auto-load the preset. Log Weight, Pin + RIR.";
 }
 
 function render(){
   tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===currentTab));
-
-  if(dayTypeSel){ dayTypeSel.value=(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume')?currentTab:''; }
-  workoutCard.classList.toggle('hidden', !(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume'));
+  workoutCard.classList.toggle('hidden', currentTab==='manage'||currentTab==='history');
   manageCard.classList.toggle('hidden', currentTab!=='manage');
   historyCard.classList.toggle('hidden', currentTab!=='history');
   if(currentTab==='manage') renderManage();
@@ -114,7 +142,7 @@ function renderWorkout(){
 function renderRow(r){
   const tr=document.createElement('tr');
 
-  const td1=document.createElement('td'); td1.className='col-ex';
+  const td1=document.createElement('td');
   const sel=document.createElement('select'); sel.className='input';
   const o0=document.createElement('option'); o0.value=''; o0.textContent='Select…'; sel.appendChild(o0);
 
@@ -133,17 +161,17 @@ function renderRow(r){
   };
   td1.appendChild(sel);
 
-  const td2=document.createElement('td'); td2.className='col-sets';
+  const td2=document.createElement('td');
   const sets=document.createElement('input'); sets.className='input'; sets.inputMode='numeric'; sets.value=r.sets??'';
   sets.oninput=()=>{r.sets=sets.value; save(state);};
   td2.appendChild(sets);
 
-  const td3=document.createElement('td'); td3.className='col-target';
+  const td3=document.createElement('td');
   const tgt=document.createElement('input'); tgt.className='input'; tgt.inputMode='numeric'; tgt.value=r.target??'';
   tgt.oninput=()=>{r.target=tgt.value; save(state);};
   td3.appendChild(tgt);
 
-  const td4=document.createElement('td'); td4.className='col-weight';
+  const td4=document.createElement('td');
   const w=document.createElement('input'); w.className='input'; w.inputMode='decimal';
   const ex=exById(r.exId);
   w.placeholder=ex?.type==='time'?'—':'kg';
@@ -152,16 +180,15 @@ function renderRow(r){
   td4.appendChild(w);
 
 
-  const tdPin=document.createElement('td'); tdPin.className='col-pin';
-  const pinSel=document.createElement('select'); pinSel.className='rirSelect';
-  let pinOpts='<option value="">Pin</option>';
-  for(let i=1;i<=15;i++){pinOpts+=`<option value="${i}">${i}</option>`;}
-  pinSel.innerHTML=pinOpts;
-  pinSel.value = (r.pin??'').toString();
-  pinSel.onchange=()=>{ r.pin=pinSel.value; save(state); };
+  const tdPin=document.createElement('td');
+  const pinSel=document.createElement('select'); pinSel.className='input';
+  pinSel.innerHTML = `<option value="">Pin</option>` + Array.from({length:15},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
+  pinSel.value = r.pin ?? '';
+  pinSel.onchange=()=>{r.pin=pinSel.value; save(state);};
   tdPin.appendChild(pinSel);
 
-  const td5=document.createElement('td'); td5.className='col-rir';
+
+  const td5=document.createElement('td');
   const done=document.createElement('select');
   done.className='rirSelect';
   // Safari-friendly picker: 1 / 2 / 3+
@@ -200,20 +227,30 @@ function renderRow(r){
   return tr;
 }
 
-function loadPreset(force=false){
+function loadPreset(){
   const preset=state.presets[currentTab]||[];
   const sess=ensureSession();
-  // Don't overwrite existing entries unless forced
-  if(!force && Array.isArray(sess.rows) && sess.rows.length) { sess.dayType=currentTab; save(state); return; }
   sess.dayType=currentTab;
-  sess.rows=preset.map(p=>({...p,id:uid('row'),weight:'',rir:''}));
+
+  // If this date already has logged rows, do not overwrite.
+  const hasData = Array.isArray(sess.rows) && sess.rows.some(r=>{
+    const any=(r.weight&&r.weight!=='')||(r.rir&&r.rir!=='')||(r.pin&&r.pin!=='')||(r.target&&r.target!=='');
+    return r.exId && any;
+  });
+  if(hasData){
+    save(state);
+    renderWorkout();
+    return;
+  }
+
+  sess.rows=preset.map(p=>({...p,id:uid('row'),weight:'',pin:'',rir:''}));
   save(state); renderWorkout();
 }
 function copyPrev(){
   const prev=state.sessions[addDays(currentDate,-1)];
   if(!prev?.rows?.length){alert('No previous day to copy.');return;}
   const sess=ensureSession();
-  sess.rows=prev.rows.map(r=>({...r,id:uid('row'),pin:'',rir:''}));
+  sess.rows=prev.rows.map(r=>({...r,id:uid('row'),rir:''}));
   save(state); renderWorkout();
 }
 function clearDay(){
@@ -283,33 +320,37 @@ tabs.forEach(b=>b.onclick=()=>{
   // Update UI immediately
   render();
   // Auto-load the preset for workout day tabs (no prompt, no extra button)
+  if(daySelect && (currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume')) daySelect.value=currentTab;
   if(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume'){
-    loadPreset(false);
-    render();
+    if(canAutoLoadPreset()) loadPreset();
   }
 });
-
-if(dayTypeSel){
-  dayTypeSel.onchange=()=>{
-    const v=dayTypeSel.value;
-    if(!v){ currentTab=''; render(); return; }
+if(daySelect){
+  daySelect.onchange=()=>{
+    const v=daySelect.value;
+    if(!v) return; // stay blank until user picks
     currentTab=v;
     render();
-    loadPreset(false);
-    render();
+    loadPreset();
+    // Persist the chosen day type for this date even if rows are still blank
+    const sess=ensureSession();
+    sess.dayType=v;
+    save(state);
   };
 }
-
-prevDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,-1); dateInput.value=currentDate; render();};
-nextDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,1); dateInput.value=currentDate; render();};
-todayBtn.onclick=()=>{followToday=true; currentDate=localISO(); dateInput.value=currentDate; render();};
-dateInput.onchange=()=>{
-  followToday=false;
-  currentDate=dateInput.value||localISO();
-  const s=state.sessions?.[currentDate];
-  currentTab=(s?.dayType)||'';
-  render();
-};
+prevDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,-1); dateInput.value=currentDate;
+// Day type dropdown sync
+syncDaySelectForDate();
+ render();};
+nextDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,1); dateInput.value=currentDate;
+// Day type dropdown sync
+syncDaySelectForDate();
+ render();};
+todayBtn.onclick=()=>{followToday=true; currentDate=localISO(); dateInput.value=currentDate;
+// Day type dropdown sync
+syncDaySelectForDate();
+ render();};
+dateInput.onchange=()=>{followToday=false; currentDate=dateInput.value||localISO(); render();};
 
 
 
@@ -321,6 +362,9 @@ function syncToTodayIfNeeded(){
   if(today!==currentDate){
     currentDate=today;
     dateInput.value=currentDate;
+// Day type dropdown sync
+syncDaySelectForDate();
+
     render();
   }
 }
@@ -371,7 +415,28 @@ function renderHistory(){
     const rows=sess.rows.filter(r=>{const ex=exById(r.exId); if(!ex) return false; if(!q) return true; return ex.name.toLowerCase().includes(q);});
     if(!rows.length) return;
     const card=document.createElement('div'); card.className='hcard';
-    card.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><strong>${iso}</strong> <span class="pill">${sess.dayType||'day'}</span></div></div>`;
+    card.innerHTML=`<div class="hhead" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><div><strong>${iso}</strong> <span class="pill">${sess.dayType||'day'}</span></div><button class="xbtn" title="Delete this day" aria-label="Delete">✕</button></div>`;
+
+    const delBtn=card.querySelector('.xbtn');
+    delBtn.onclick=(ev)=>{
+      ev.stopPropagation();
+      if(!confirm(`Delete ${iso}?`)) return;
+      delete state.sessions[iso];
+      save(state);
+      // If we deleted the currently open day, refresh it
+      renderHistory();
+    };
+    card.onclick=()=>{
+      followToday=false;
+      currentDate=iso;
+      dateInput.value=currentDate;
+      // switch to that day's type if known
+      if(sess.dayType && (sess.dayType==='strength'||sess.dayType==='fatloss'||sess.dayType==='volume')){
+        currentTab=sess.dayType;
+      }
+      syncDaySelectForDate();
+      render();
+    };
     const list=document.createElement('div'); list.style.marginTop='8px'; list.style.display='grid'; list.style.gap='6px';
     rows.forEach(r=>{const ex=exById(r.exId); const line=document.createElement('div'); line.className='muted small';
       if(ex?.type==='time') line.textContent=`${ex.name}: ${r.sets} sets • ${r.target||''}s • RIR ${r.rir||''}`;
@@ -423,18 +488,6 @@ function setupBackup(btnEl,fileEl){
 setupBackup(exportBtn, importFile);
 setupBackup(exportBtn2, importFile2);
 
-// Delete ALL history (sessions) on this device
-if(clearHistoryBtn){
-  clearHistoryBtn.onclick=()=>{
-    const count=Object.keys(state.sessions||{}).length;
-    if(count===0){alert('No history to delete.'); return;}
-    if(!confirm(`Delete ALL history (${count} days)? This cannot be undone.`)) return;
-    state.sessions={};
-    save(state);
-    alert('History deleted.');
-    render();
-  };
-}
 
 // Service worker
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));}

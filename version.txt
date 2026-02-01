@@ -1,1 +1,1 @@
-gym-v9-layout-history-delete
+gym-v10-history-x-delete-pin

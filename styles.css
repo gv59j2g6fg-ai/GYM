@@ -13,8 +13,7 @@
 .row{display:flex;align-items:center}.gap{gap:8px}.spacer{flex:1}
 .btn{padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--text)}
 .btn.accent{border-color:rgba(31,143,106,.6);background:rgba(31,143,106,.18)}.btn.danger{border-color:rgba(208,74,74,.6);background:rgba(208,74,74,.12)}
-.tablewrap{overflow:auto;margin-top:12px;border:1px solid var(--line);border-radius:14px}
-.t{width:100%;border-collapse:collapse;table-layout:fixed;min-width:560px}
+.tablewrap{overflow:auto;margin-top:12px;border:1px solid var(--line);border-radius:14px}.t{width:100%;border-collapse:collapse;min-width:720px}
 .t th,.t td{padding:10px;border-bottom:1px solid rgba(34,48,68,.6);text-align:left;vertical-align:middle}
 .t th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .input{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--text)}
@@ -26,38 +25,17 @@
 
 .rirSelect{background: rgba(12,19,29,.9); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 12px; color:var(--text); outline:none; width:100%; max-width:140px;}
 
+/* v10: use dropdown for day type */
 
-.daySelect{
-  appearance:none;
-  -webkit-appearance:none;
-  background:var(--card2);
-  color:var(--text);
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:10px 12px;
-  font-weight:700;
-  min-width:190px;
-}
-@media(max-width:560px){
-  .daySelect{min-width:150px; width:100%;}
-  .tabs{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
-}
+/* Hide the 3 day tabs; use the day dropdown instead */
+.tab[data-tab="strength"], .tab[data-tab="fatloss"], .tab[data-tab="volume"]{display:none}
 
+/* Table sizing: keep Exercise narrower so Pin + RIR stay visible */
+.t{min-width:820px}
+.t th:nth-child(1), .t td:nth-child(1){min-width:180px;max-width:240px}
+.t td:nth-child(1) .input{min-width:180px}
+.t th:nth-child(6), .t td:nth-child(6){min-width:130px}
 
-
-/* Column sizing */
-.t th.col-ex,.t td.col-ex{width:28%}
-.t th.col-sets,.t td.col-sets{width:10%}
-.t th.col-target,.t td.col-target{width:16%}
-.t th.col-weight,.t td.col-weight{width:14%}
-.t th.col-pin,.t td.col-pin{width:12%}
-.t th.col-rir,.t td.col-rir{width:20%}
-
-/* Keep selects/inputs from forcing width */
-.t td select.input{min-width:0}
-
-@media (max-width:520px){
-  .t{min-width:520px}
-  .t th,.t td{padding:8px}
-  .rirSelect{max-width:120px}
-}
+/* History delete X button */
+.xbtn{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.15);color:var(--text);border-radius:12px;padding:8px 10px;font-size:16px;line-height:1}
+.xbtn:active{transform:scale(.98)}
