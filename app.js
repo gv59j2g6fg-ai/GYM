@@ -3,9 +3,47 @@ const STORE_KEY="gym_template_rir_v10_history_x_pin";
 
 const INC_KG=2.5;
 
+const DAY_ORDER = ["strength","fatloss","volume"];
+function getNextDayType(prevType){
+  const i = DAY_ORDER.indexOf(prevType);
+  if(i===-1) return "strength";
+  return DAY_ORDER[(i+1)%DAY_ORDER.length];
+}
+function isCompletedSession(sess){
+  return !!(sess?.rows && sess.rows.some(r=>r.exId));
+}
+function isSavedSession(sess){
+  // Backwards compatible: older sessions didn't have 'saved'
+  if(sess && sess.saved===true) return true;
+  return !!(sess?.dayType && isCompletedSession(sess));
+}
+function getLastSavedSessionBefore(iso){
+  const keys = Object.keys(state.sessions||{}).filter(d=>d<iso).sort();
+  for(let i=keys.length-1;i>=0;i--){
+    const s = state.sessions[keys[i]];
+    if(s?.dayType && isSavedSession(s) && isCompletedSession(s)) return s;
+  }
+  return null;
+}
+function plannedTypeForDate(iso){
+  const last = getLastSavedSessionBefore(iso);
+  if(!last) return "strength";
+  return getNextDayType(last.dayType);
+}
+
+
 function uid(p="id"){return `${p}_${Math.random().toString(16).slice(2)}_${Date.now()}`;}
-function localISO(d=new Date()){const off=d.getTimezoneOffset();return new Date(d.getTime()-off*60000).toISOString().slice(0,10);}
-function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function pad2(n){return String(n).padStart(2,'0');}
+function localISO(d=new Date()){
+  // local date in YYYY-MM-DD (timezone-safe)
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+}
+function addDays(iso,n){
+  const [y,m,dd]=iso.split('-').map(Number);
+  const d=new Date(y,m-1,dd);
+  d.setDate(d.getDate()+n);
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+}
 function parseTop(t){t=(t||'').toString().trim();if(!t)return null;const m=t.match(/(\d+)\s*-\s*(\d+)/);if(m)return parseInt(m[2],10);const n=t.match(/(\d+)/);return n?parseInt(n[1],10):null;}
 
 function load(){try{return JSON.parse(localStorage.getItem(STORE_KEY)||'null');}catch(e){return null;}}
@@ -78,8 +116,7 @@ let currentTab='strength';
 let followToday=true; // if true, app auto-opens/returns to today
 
 dateInput.value=currentDate;
-// Day type dropdown sync
-syncDaySelectForDate();
+// Initial view is decided by openDate() after functions are defined.
 
 
 function exById(id){return state.exercises.find(e=>e.id===id)||null;}
@@ -90,6 +127,35 @@ function syncDaySelectForDate(){
   if(daySelect){
     daySelect.value=t||'';
   }
+
+function openDate(iso){
+  followToday = (iso===localISO());
+  currentDate = iso;
+  dateInput.value = currentDate;
+
+  // If this date already has a SAVED completed session, show it.
+  const existing = state.sessions[currentDate];
+  if(existing?.dayType && isSavedSession(existing) && isCompletedSession(existing)){
+    currentTab = existing.dayType;
+    if(daySelect) daySelect.value = existing.dayType;
+    render();
+    return;
+  }
+
+  // Otherwise, plan based on the last SAVED completed session before this date
+  const plan = plannedTypeForDate(currentDate);
+  currentTab = plan;
+  if(daySelect) daySelect.value = plan;
+
+  // Build/replace this date's working session in-memory (NOT marked saved)
+  state.sessions[currentDate] = state.sessions[currentDate] || {dayType: plan, rows: []};
+  state.sessions[currentDate].dayType = plan;
+
+  // Force-load preset rows unless user already typed kg/pin/rir on this date
+  loadPreset(true, /*persist*/ false);
+
+  render();
+}
   if(t && (t==='strength'||t==='fatloss'||t==='volume')){
     currentTab=t;
   }
@@ -181,14 +247,13 @@ function renderRow(r, sess){
 
 
   const tdPin=document.createElement('td');
-  const pinSel=document.createElement('select'); pinSel.className='input';
-  pinSel.innerHTML = `<option value="">Pin</option>` + Array.from({length:15},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
-  pinSel.value = r.pin ?? '';
-  pinSel.onchange=()=>{r.pin=pinSel.value; save(state);};
-  tdPin.appendChild(pinSel);
-
-
-  const td5=document.createElement('td');
+  const pinInp=document.createElement('input'); 
+  pinInp.className='input';
+  pinInp.placeholder='Pin (e.g. 5,7)';
+  pinInp.value = r.pin ?? '';
+  pinInp.oninput=()=>{r.pin=pinInp.value; save(state);};
+  tdPin.appendChild(pinInp);
+const td5=document.createElement('td');
   const done=document.createElement('select');
   done.className='rirSelect';
   // Safari-friendly picker: 1 / 2 / 3+
@@ -246,24 +311,34 @@ function renderRow(r, sess){
   return tr;
 }
 
-function loadPreset(){
-  const preset=state.presets[currentTab]||[];
-  const sess=ensureSession();
-  sess.dayType=currentTab;
+function loadPreset(force=false, persist=true){
+  const preset = state.presets[currentTab] || [];
+  const sess = ensureSession();
+  sess.dayType = currentTab;
 
-  // If this date already has logged rows, do not overwrite.
-  const hasData = Array.isArray(sess.rows) && sess.rows.some(r=>{
-    const any=(r.weight&&r.weight!=='')||(r.rir&&r.rir!=='')||(r.pin&&r.pin!=='')||(r.target&&r.target!=='');
-    return r.exId && any;
+  // Only prevent overwrite if user has REAL inputs (kg / pin / RIR) on this date
+  const hasReal = Array.isArray(sess.rows) && sess.rows.some(r=>{
+    return (r.weight && String(r.weight).trim()!=='') ||
+           (r.pin && String(r.pin).trim()!=='') ||
+           (r.rir && String(r.rir).trim()!=='');
   });
-  if(hasData){
-    save(state);
+
+  if(hasReal && !force){
+    if(persist) save(state);
     renderWorkout();
     return;
   }
 
-  sess.rows=preset.map(p=>({...p,id:uid('row'),weight:'',pin:'',rir:''}));
-  save(state); renderWorkout();
+  sess.rows = preset.map(p=>({
+    ...p,
+    id: uid('row'),
+    weight: '',
+    pin: '',
+    rir: ''
+  }));
+
+  if(persist) save(state);
+  renderWorkout();
 }
 function copyPrev(){
   const prev=state.sessions[addDays(currentDate,-1)];
@@ -328,6 +403,7 @@ function applyProgression(){
 function saveSession(){
   const sess=ensureSession();
   sess.rows=sess.rows.filter(r=>r.exId);
+  sess.saved=true; sess.savedAt=Date.now();
   save(state);
   note.textContent='Saved.'; renderWorkout();
 }
@@ -357,19 +433,10 @@ if(daySelect){
     save(state);
   };
 }
-prevDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,-1); dateInput.value=currentDate;
-// Day type dropdown sync
-syncDaySelectForDate();
- render();};
-nextDay.onclick=()=>{followToday=false; currentDate=addDays(currentDate,1); dateInput.value=currentDate;
-// Day type dropdown sync
-syncDaySelectForDate();
- render();};
-todayBtn.onclick=()=>{followToday=true; currentDate=localISO(); dateInput.value=currentDate;
-// Day type dropdown sync
-syncDaySelectForDate();
- render();};
-dateInput.onchange=()=>{followToday=false; currentDate=dateInput.value||localISO(); render();};
+prevDay.onclick=()=>{openDate(addDays(currentDate,-1));};
+nextDay.onclick=()=>{openDate(addDays(currentDate,1));};
+todayBtn.onclick=()=>{openDate(localISO());};
+dateInput.onchange=()=>{openDate(dateInput.value||localISO());};
 
 
 
@@ -381,8 +448,7 @@ function syncToTodayIfNeeded(){
   if(today!==currentDate){
     currentDate=today;
     dateInput.value=currentDate;
-// Day type dropdown sync
-syncDaySelectForDate();
+// Initial view is decided by openDate() after functions are defined.
 
     render();
   }
@@ -511,4 +577,4 @@ setupBackup(exportBtn2, importFile2);
 // Service worker
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));}
 
-render();
+openDate(currentDate);
