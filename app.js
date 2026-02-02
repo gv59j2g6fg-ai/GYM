@@ -2,10 +2,51 @@
 
 
 
-const STORE_KEY="gym_full_stable_v1";
+const STORE_KEY="gym_full_stable_v5";
+
+// Storage wrapper: localStorage can fail in some Safari/PWA modes.
+// We fall back to sessionStorage, and keep in-memory as a last resort.
+let _memStore = null;
+function canUseStorage(store){
+  try{
+    const k="__t";
+    store.setItem(k,"1");
+    store.removeItem(k);
+    return true;
+  }catch(e){ return false; }
+}
+const _store = (typeof localStorage!=='undefined' && canUseStorage(localStorage)) ? localStorage :
+               (typeof sessionStorage!=='undefined' && canUseStorage(sessionStorage)) ? sessionStorage : null;
+
+function storageGet(){
+  if(_store){
+    try { return _store.getItem(STORE_KEY); } catch(e){ return null; }
+  }
+  return _memStore;
+}
+function storageSet(v){
+  if(_store){
+    try { _store.setItem(STORE_KEY, v); return; } catch(e){ /* fallthrough */ }
+  }
+  _memStore = v;
+}
+
 const DAY_ORDER=["strength","fatloss","volume"];
 
 function uid(p="id"){return `${p}_${Math.random().toString(16).slice(2)}_${Date.now()}`;}
+
+function normalizeISO(v){
+  // Accept YYYY-MM-DD (native), or DD/MM/YYYY from some locale displays
+  if(!v) return v;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m=v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(m){
+    const dd=m[1], mm=m[2], yy=m[3];
+    return `${yy}-${mm}-${dd}`;
+  }
+  return v;
+}
+
 function localISO(d=new Date()){
   // local date YYYY-MM-DD without UTC shift
   const off=d.getTimezoneOffset();
@@ -19,8 +60,8 @@ function addDays(iso,n){
   return localISO(d);
 }
 
-function load(){try{return JSON.parse(localStorage.getItem(STORE_KEY)||"null");}catch(e){return null;}}
-function save(s){localStorage.setItem(STORE_KEY, JSON.stringify(s));}
+function load(){try{const raw=storageGet(); return JSON.parse(raw||'null');}catch(e){return null;}}
+function save(s){storageSet(JSON.stringify(s));}
 
 function defaultState(){
   const exercises=[
@@ -196,6 +237,7 @@ function decideProgramForDate(iso){
 }
 
 function openDate(iso){
+  iso = normalizeISO(iso);
   currentDate = iso;
   dateInput.value = currentDate;
 
@@ -391,7 +433,7 @@ backFromHistory.onclick=()=>{currentView='workout'; render();};
 prevDay.onclick=()=>openDate(addDays(currentDate,-1));
 nextDay.onclick=()=>openDate(addDays(currentDate,1));
 todayBtn.onclick=()=>openDate(localISO());
-dateInput.onchange=()=>openDate(dateInput.value||localISO());
+dateInput.onchange=()=>openDate(normalizeISO(dateInput.value)||localISO());
 
 // Buttons
 addRowBtn.onclick=addRow;
@@ -577,8 +619,19 @@ importFile.onchange=async()=>{
   }
 };
 
+
+const storageStatusEl = document.getElementById('storageStatus');
+if(storageStatusEl){
+  if(!_store){
+    storageStatusEl.textContent = "Warning: Storage is blocked in this browser mode. Your data may not persist after closing. Turn off Private Browsing or use Safari normal mode.";
+  }else{
+    storageStatusEl.textContent = "Storage: OK";
+  }
+}
+
 // Init
 openDate(currentDate);
+
 
 
 // Paste JSON import (works on iOS when file picker is blocked)
