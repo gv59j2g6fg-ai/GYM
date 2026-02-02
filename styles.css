@@ -31,7 +31,7 @@
 .tab[data-tab="strength"], .tab[data-tab="fatloss"], .tab[data-tab="volume"]{display:none}
 
 /* Table sizing: keep Exercise narrower so Pin + RIR stay visible */
-.t{min-width:820px}
+.t{min-width:860px}
 .t th:nth-child(1), .t td:nth-child(1){min-width:180px;max-width:240px}
 .t td:nth-child(1) .input{min-width:180px}
 .t th:nth-child(6), .t td:nth-child(6){min-width:130px}
@@ -39,3 +39,8 @@
 /* History delete X button */
 .xbtn{border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.15);color:var(--text);border-radius:12px;padding:8px 10px;font-size:16px;line-height:1}
 .xbtn:active{transform:scale(.98)}
+
+
+/* Row delete button in workout table */
+.rowdel{padding:6px 8px; font-size:14px; line-height:1;}
+.t th:nth-child(7), .t td:nth-child(7){min-width:54px; text-align:center;}
