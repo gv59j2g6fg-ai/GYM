@@ -1,4 +1,4 @@
-const CACHE='gym-template-v24-clean-unified';
+const CACHE='gym-template-v25-fresh-clean';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./apple-touch-icon.png','./apple-touch-icon-180x180.png','./icon-192.png','./icon-512.png','./maskable-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))); self.skipWaiting();});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>k===CACHE?null:caches.delete(k))))); self.clients.claim();});
