@@ -331,6 +331,52 @@ function addRow(){
   renderWorkout();
 }
 
+function copyPrev(){
+  // Copy from most recent saved day before currentDate
+  const prior = mostRecentSavedBefore(currentDate);
+  if(!prior?.sess?.rows?.length){
+    alert('No previous saved day to copy.');
+    return;
+  }
+  const rowsCopy = prior.sess.rows.map(r=>({ ...r, id: uid('row') }));
+  setDraftSession(currentDate, prior.sess.dayType || currentProgram, rowsCopy);
+  currentProgram = prior.sess.dayType || currentProgram;
+  renderWorkout();
+}
+
+function clearDay(){
+  if(!confirm('Clear this day?')) return;
+
+  const saved = state.sessions?.[currentDate];
+  if(saved?.saved){
+    saved.rows = [];
+    saved.saved = false;
+    save(state);
+  }
+  // clear draft
+  delete drafts[currentDate];
+  setDraftSession(currentDate, currentProgram, []);
+  renderWorkout();
+}
+
+function saveDay(){
+  const { sess } = sessionForDate(currentDate);
+
+  // Remove empty rows (no exercise)
+  const rows = (sess.rows||[]).filter(r=>r.exId);
+
+  state.sessions[currentDate] = {
+    dayType: sess.dayType,
+    rows,
+    saved: true
+  };
+
+  delete drafts[currentDate];
+  save(state);
+  renderWorkout();
+}
+
+
 // Tabs
 tabs.forEach(b=>b.onclick=()=>{
   const next=b.dataset.tab;
