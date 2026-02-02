@@ -40,7 +40,7 @@
 
   <div class="tablewrap">
     <table class="t">
-      <thead><tr><th style="width:26%">Exercise</th><th style="width:10%">Sets</th><th style="width:14%">Target</th><th style="width:14%">Weight</th><th style="width:14%">Pin</th><th style="width:18%">RIR</th><th style="width:4%">✕</th></tr></thead>
+      <thead><tr><th style="width:26%">Exercise</th><th style="width:10%">Sets</th><th style="width:16%">Target</th><th style="width:14%">Weight</th><th style="width:14%">Pin</th><th style="width:16%">RIR</th><th style="width:4%"></th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -54,7 +54,7 @@
 </section>
 
 <section class="card hidden" id="manageCard">
-  <div class="cardhead"><div class="cardtitle">Manage Exercises</div></div>
+  <div class="cardhead"><div class="cardtitle">Manage Exercises</div><button class="btn" id="backToWorkout1">← Workout</button></div>
   <div class="row gap" style="margin-top:10px">
     <input class="input" id="newName" placeholder="New exercise name"/>
     <select class="input" id="newType"><option value="reps">Reps + Weight</option><option value="time">Time (seconds)</option></select>
@@ -78,6 +78,7 @@
 <section class="card hidden" id="historyCard">
   <div class="cardhead">
     <div class="cardtitle">History</div>
+    <button class="btn" id="backToWorkout2">← Workout</button>
     <div class="row gap">
       <select class="input" id="rangeSel"><option value="14">Last 14 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 365 days</option></select>
       <input class="input" id="search" placeholder="Search (e.g. squat)"/>
@@ -91,5 +92,5 @@
 <footer class="footer">
   <div>Offline-first. Data stays on your device.</div>
   <div class="muted small">If you upload new files and iPad shows old version: Settings → Safari → Advanced → Website Data → delete github.io</div>
-<div class="muted small">Build: gym-template-v21-rotation</div></footer>
+<div class="muted small">Build: gym-template-v22-date-rotation</div></footer>
 </main></body></html>

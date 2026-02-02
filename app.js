@@ -1,53 +1,34 @@
-// Full exact original Strength/Fat Loss/Volume build
-const STORE_KEY="gym_template_rir_v10_history_x_pin";
+// GYM Tracker v22 — date-driven rotation + per-day edits
+const STORE_KEY = "gym_tracker_v22_store";
+const INC_KG = 2.5;
 
-const INC_KG=2.5;
+function uid(p="id"){ return `${p}_${Math.random().toString(16).slice(2)}_${Date.now()}`; }
+
+// Local YYYY-MM-DD (timezone safe)
+function localISO(d=new Date()){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function isoToLocalDate(iso){
+  const [y,m,d]=iso.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+function addDays(iso, n){
+  const d = isoToLocalDate(iso);
+  d.setDate(d.getDate()+n);
+  return localISO(d);
+}
+
+function load(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'null'); }catch(e){ return null; } }
+function save(s){ localStorage.setItem(STORE_KEY, JSON.stringify(s)); }
 
 const DAY_ORDER = ["strength","fatloss","volume"];
-function getNextDayType(prevType){
-  const i = DAY_ORDER.indexOf(prevType);
-  if(i===-1) return "strength";
-  return DAY_ORDER[(i+1)%DAY_ORDER.length];
+function nextType(t){
+  const i = DAY_ORDER.indexOf(t);
+  return DAY_ORDER[(i+1+DAY_ORDER.length)%DAY_ORDER.length] || "strength";
 }
-function isCompletedSession(sess){
-  return !!(sess?.rows && sess.rows.some(r=>r.exId));
-}
-function isSavedSession(sess){
-  // Backwards compatible: older sessions didn't have 'saved'
-  if(sess && sess.saved===true) return true;
-  return !!(sess?.dayType && isCompletedSession(sess));
-}
-function getLastSavedSessionBefore(iso){
-  const keys = Object.keys(state.sessions||{}).filter(d=>d<iso).sort();
-  for(let i=keys.length-1;i>=0;i--){
-    const s = state.sessions[keys[i]];
-    if(s?.dayType && isSavedSession(s) && isCompletedSession(s)) return s;
-  }
-  return null;
-}
-function plannedTypeForDate(iso){
-  const last = getLastSavedSessionBefore(iso);
-  if(!last) return "strength";
-  return getNextDayType(last.dayType);
-}
-
-
-function uid(p="id"){return `${p}_${Math.random().toString(16).slice(2)}_${Date.now()}`;}
-function pad2(n){return String(n).padStart(2,'0');}
-function localISO(d=new Date()){
-  // local date in YYYY-MM-DD (timezone-safe)
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-}
-function addDays(iso,n){
-  const [y,m,dd]=iso.split('-').map(Number);
-  const d=new Date(y,m-1,dd);
-  d.setDate(d.getDate()+n);
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-}
-function parseTop(t){t=(t||'').toString().trim();if(!t)return null;const m=t.match(/(\d+)\s*-\s*(\d+)/);if(m)return parseInt(m[2],10);const n=t.match(/(\d+)/);return n?parseInt(n[1],10):null;}
-
-function load(){try{return JSON.parse(localStorage.getItem(STORE_KEY)||'null');}catch(e){return null;}}
-function save(s){localStorage.setItem(STORE_KEY, JSON.stringify(s));}
 
 function defaultState(){
   const exercises=[
@@ -66,7 +47,7 @@ function defaultState(){
     {id:uid('ex'),name:"Farmer's Walk",type:'time',archived:false},
   ];
   const id=(n)=>exercises.find(e=>e.name===n)?.id||'';
-  const mk=(name,sets,target)=>({id:uid('row'),exId:id(name),sets:String(sets),target:String(target),weight:'',rir:''});
+  const mk=(name,sets,target)=>({id:uid('row'),exId:id(name),sets:String(sets),target:String(target),weight:'',pin:'',rir:''});
   const presets={
     strength:[mk('Squat',2,5),mk('Bench Press (Free)',2,5),mk('Bent Over Row',2,5),mk('Skull Crusher',2,10)],
     fatloss:[mk('Deadlift',2,12),mk('Lat Pull Down',2,15),mk('Military / Arnold Press',2,15),mk('Hammer Curl',2,15),mk("Farmer's Walk",2,35)],
@@ -75,13 +56,16 @@ function defaultState(){
   return {exercises,presets,sessions:{},progression:{}};
 }
 
-let state=load()||defaultState();save(state);
+let state = load() || defaultState();
+save(state);
 
+// DOM
 const dateInput=document.getElementById('dateInput');
 const prevDay=document.getElementById('prevDay');
 const nextDay=document.getElementById('nextDay');
 const todayBtn=document.getElementById('todayBtn');
 const tabs=[...document.querySelectorAll('.tab')];
+
 const workoutCard=document.getElementById('workoutCard');
 const manageCard=document.getElementById('manageCard');
 const historyCard=document.getElementById('historyCard');
@@ -111,71 +95,120 @@ const importFile=document.getElementById('importFile');
 const exportBtn2=document.getElementById('exportBtn2');
 const importFile2=document.getElementById('importFile2');
 
-let currentDate=localISO();
-let currentTab='strength';
-let followToday=true; // if true, app auto-opens/returns to today
+const back1=document.getElementById('backToWorkout1');
+const back2=document.getElementById('backToWorkout2');
 
-dateInput.value=currentDate;
-// Initial view is decided by openDate() after functions are defined.
+let currentDate = localISO();
+let currentTab = 'strength';
+let followToday = true;
 
+// Draft session for dates with no saved session yet
+let draft = null; // {date, dayType, rows}
+function getSavedSession(date){ return state.sessions?.[date] || null; }
+function setSavedSession(date, sess){ state.sessions[date]=sess; }
 
-function exById(id){return state.exercises.find(e=>e.id===id)||null;}
+function exById(id){ return state.exercises.find(e=>e.id===id)||null; }
+function activeExercises(){ return state.exercises.filter(e=>!e.archived); }
 
-function syncDaySelectForDate(){
-  const sess=state.sessions[currentDate];
-  const t=sess?.dayType||'';
-  if(daySelect){
-    daySelect.value=t||'';
+// A day is "completed" if any row has an exercise chosen (exId)
+function isCompleted(sess){ return !!(sess?.rows && sess.rows.some(r=>r.exId)); }
+
+// Find the last saved session BEFORE date that has a dayType
+function findLastSessionBefore(date){
+  const keys = Object.keys(state.sessions||{}).filter(d=>d<date).sort();
+  for(let i=keys.length-1;i>=0;i--){
+    const s=state.sessions[keys[i]];
+    if(s?.dayType) return {date:keys[i], sess:s};
   }
+  return null;
+}
 
-function openDate(iso){
-  followToday = (iso===localISO());
-  currentDate = iso;
+// Decide what dayType a given date SHOULD be (without creating a saved session)
+function plannedDayTypeFor(date){
+  const saved = getSavedSession(date);
+  if(saved?.dayType) return saved.dayType;
+
+  const last = findLastSessionBefore(date);
+  if(!last?.sess?.dayType) return "strength";
+
+  // If the last session wasn't completed, repeat it (missed session)
+  if(!isCompleted(last.sess)) return last.sess.dayType;
+
+  // Otherwise advance
+  return nextType(last.sess.dayType);
+}
+
+function titleFor(t){
+  return t==='strength'?'Strength Day':t==='fatloss'?'Fat Loss Day':t==='volume'?'Volume Day':'Workout';
+}
+
+// Load preset rows into a session object (in-memory), optionally overwrite
+function presetRowsFor(dayType){
+  const preset = state.presets[dayType] || [];
+  return preset.map(p=>({ ...p, id:uid('row'), weight:'', pin:'', rir:'' }));
+}
+
+function sessionHasRealData(sess){
+  return !!sess?.rows?.some(r =>
+    (r.weight && r.weight!=='') ||
+    (r.pin && r.pin!=='') ||
+    (r.rir && r.rir!=='')
+  );
+}
+
+// Switch date (THIS is the boss)
+function openDate(date){
+  currentDate = date;
   dateInput.value = currentDate;
 
-  // If this date already has a SAVED completed session, show it.
-  const existing = state.sessions[currentDate];
-  if(existing?.dayType && isSavedSession(existing) && isCompletedSession(existing)){
-    currentTab = existing.dayType;
-    if(daySelect) daySelect.value = existing.dayType;
+  // If there is a saved session, use it
+  const saved = getSavedSession(currentDate);
+  if(saved){
+    draft = null;
+    currentTab = saved.dayType || plannedDayTypeFor(currentDate);
+    if(daySelect) daySelect.value = currentTab;
     render();
+    // If session exists but has no rows yet, show preset (without overwriting real data)
+    if((saved.rows||[]).length===0){
+      // load preset into saved rows ONLY if no real data (it has none)
+      saved.dayType = currentTab;
+      saved.rows = presetRowsFor(currentTab);
+      save(state);
+      render();
+    }
     return;
   }
 
-  // Otherwise, plan based on the last SAVED completed session before this date
-  const plan = plannedTypeForDate(currentDate);
-  currentTab = plan;
-  if(daySelect) daySelect.value = plan;
-
-  // Build/replace this date's working session in-memory (NOT marked saved)
-  state.sessions[currentDate] = state.sessions[currentDate] || {dayType: plan, rows: []};
-  state.sessions[currentDate].dayType = plan;
-
-  // Force-load preset rows unless user already typed kg/pin/rir on this date
-  loadPreset(true, /*persist*/ false);
-
+  // No saved session: create a draft view (NOT saved until user edits/saves)
+  const t = plannedDayTypeFor(currentDate);
+  currentTab = t;
+  if(daySelect) daySelect.value = t;
+  draft = { date: currentDate, dayType: t, rows: presetRowsFor(t) };
   render();
 }
-  if(t && (t==='strength'||t==='fatloss'||t==='volume')){
-    currentTab=t;
-  }
+
+function getActiveSession(){
+  const saved = getSavedSession(currentDate);
+  if(saved) return {sess:saved, saved:true};
+  if(draft && draft.date===currentDate) return {sess:draft, saved:false};
+  // fallback
+  draft = { date: currentDate, dayType: plannedDayTypeFor(currentDate), rows: presetRowsFor(plannedDayTypeFor(currentDate)) };
+  return {sess:draft, saved:false};
 }
-function canAutoLoadPreset(){
-  // Only auto-load when a day type is explicitly selected for this date, or when the date already has a dayType saved.
-  const sess=state.sessions[currentDate];
-  const savedType=sess?.dayType;
-  const selected=daySelect?daySelect.value:'';
-  return Boolean(selected||savedType);
-}
-function activeExercises(){return state.exercises.filter(e=>!e.archived);}
-function ensureSession(){
-  if(!state.sessions[currentDate]) state.sessions[currentDate]={dayType:currentTab,rows:[]};
-  const s=state.sessions[currentDate];
-  if(!Array.isArray(s.rows)) s.rows=[];
+
+// Convert draft into a saved session (first edit)
+function touch(){
+  const active = getActiveSession();
+  if(active.saved) return active.sess;
+  const s = { dayType: active.sess.dayType, rows: active.sess.rows || [] };
+  setSavedSession(currentDate, s);
+  draft = null;
+  save(state);
   return s;
 }
+
 function setTitle(){
-  dayTitle.textContent=currentTab==='strength'?'Strength Day':currentTab==='fatloss'?'Fat Loss Day':currentTab==='volume'?'Volume Day':'Workout';
+  dayTitle.textContent = titleFor(currentTab);
   if(daySelect){
     if(currentTab==='manage'||currentTab==='history'){
       daySelect.disabled=true;
@@ -185,7 +218,7 @@ function setTitle(){
       if(daySelectHint) daySelectHint.textContent='Pick a day type to load the preset for this date.';
     }
   }
-  note.textContent="Pick Strength / Fat Loss / Volume to auto-load the preset. Log Weight, Pin + RIR.";
+  note.textContent="Log Sets, Target, Weight (kg), Pin (multi ok: 5,7), and RIR. ✕ removes a row for this day only.";
 }
 
 function render(){
@@ -193,6 +226,7 @@ function render(){
   workoutCard.classList.toggle('hidden', currentTab==='manage'||currentTab==='history');
   manageCard.classList.toggle('hidden', currentTab!=='manage');
   historyCard.classList.toggle('hidden', currentTab!=='history');
+
   if(currentTab==='manage') renderManage();
   if(currentTab==='history') renderHistory();
   if(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume') renderWorkout();
@@ -200,63 +234,80 @@ function render(){
 
 function renderWorkout(){
   setTitle();
-  const sess=ensureSession();
+  const {sess} = getActiveSession();
   tbody.innerHTML='';
-  sess.rows.forEach(r=>tbody.appendChild(renderRow(r, sess)));
+  (sess.rows||[]).forEach(r=>tbody.appendChild(renderRow(r)));
 }
 
-function renderRow(r, sess){
+// Remove a row for this day only
+function removeRow(rowId){
+  const active = getActiveSession();
+  const sess = active.saved ? active.sess : touch();
+  sess.rows = (sess.rows||[]).filter(r=>r.id!==rowId);
+  save(state);
+  renderWorkout();
+}
+
+function renderRow(r){
   const tr=document.createElement('tr');
 
+  // Exercise select
   const td1=document.createElement('td');
   const sel=document.createElement('select'); sel.className='input';
-  const o0=document.createElement('option'); o0.value=''; o0.textContent='Select…'; sel.appendChild(o0);
-
+  sel.appendChild(new Option('Select…',''));
   const opts=[...activeExercises()];
   const rowEx=exById(r.exId);
   if(rowEx && rowEx.archived && !opts.find(x=>x.id===rowEx.id)) opts.unshift(rowEx);
-
-  opts.forEach(ex=>{const o=document.createElement('option'); o.value=ex.id; o.textContent=ex.archived?`${ex.name} (archived)`:ex.name; sel.appendChild(o);});
+  opts.forEach(ex=>{
+    const o=document.createElement('option');
+    o.value=ex.id;
+    o.textContent=ex.archived?`${ex.name} (archived)`:ex.name;
+    sel.appendChild(o);
+  });
   sel.value=r.exId||'';
   sel.onchange=()=>{
+    const sess = touch();
     r.exId=sel.value;
+    // weight carry-forward: if we have progression weight saved
     const ex=exById(r.exId);
-    if(ex?.type==='reps'){const nw=state.progression[ex.id]; if(nw && !r.weight) r.weight=String(nw);}
-    else {r.weight='';}
+    if(ex?.type==='reps'){
+      const nw=state.progression?.[ex.id];
+      if(nw && !r.weight) r.weight=String(nw);
+    }
     save(state); renderWorkout();
   };
   td1.appendChild(sel);
 
+  // Sets
   const td2=document.createElement('td');
   const sets=document.createElement('input'); sets.className='input'; sets.inputMode='numeric'; sets.value=r.sets??'';
-  sets.oninput=()=>{r.sets=sets.value; save(state);};
+  sets.oninput=()=>{ touch(); r.sets=sets.value; save(state); };
   td2.appendChild(sets);
 
+  // Target
   const td3=document.createElement('td');
   const tgt=document.createElement('input'); tgt.className='input'; tgt.inputMode='numeric'; tgt.value=r.target??'';
-  tgt.oninput=()=>{r.target=tgt.value; save(state);};
+  tgt.oninput=()=>{ touch(); r.target=tgt.value; save(state); };
   td3.appendChild(tgt);
 
+  // Weight (allow even for Farmer's Walk)
   const td4=document.createElement('td');
   const w=document.createElement('input'); w.className='input'; w.inputMode='decimal';
   const ex=exById(r.exId);
-  w.placeholder=ex?.type==='time'?'—':'kg';
-  w.value=r.weight??''; w.disabled=(ex?.type==='time');
-  w.oninput=()=>{r.weight=w.value; save(state);};
+  w.placeholder='kg';
+  w.value=r.weight??'';
+  w.oninput=()=>{ touch(); r.weight=w.value; save(state); };
   td4.appendChild(w);
 
-
+  // Pin (multi numbers allowed)
   const tdPin=document.createElement('td');
-  const pinInp=document.createElement('input'); 
-  pinInp.className='input';
-  pinInp.placeholder='Pin (e.g. 5,7)';
-  pinInp.value = r.pin ?? '';
-  pinInp.oninput=()=>{r.pin=pinInp.value; save(state);};
-  tdPin.appendChild(pinInp);
-const td5=document.createElement('td');
-  const done=document.createElement('select');
-  done.className='rirSelect';
-  // Safari-friendly picker: 1 / 2 / 3+
+  const pin=document.createElement('input'); pin.className='input'; pin.placeholder='e.g. 5,7'; pin.value = (r.pin??'');
+  pin.oninput=()=>{ touch(); r.pin=pin.value; save(state); };
+  tdPin.appendChild(pin);
+
+  // RIR picker
+  const td5=document.createElement('td');
+  const done=document.createElement('select'); done.className='rirSelect';
   done.innerHTML = `
     <option value="">RIR</option>
     <option value="1">1</option>
@@ -264,206 +315,193 @@ const td5=document.createElement('td');
     <option value="3">3+</option>
     <option value="custom">Custom…</option>
   `;
-  const curVal = (r.rir??'').toString().trim().replace('+','');
+  const curVal=(r.rir??'').toString().trim().replace('+','');
   if(curVal==='1'||curVal==='2'||curVal==='3') done.value=curVal;
   else if(curVal) done.value='custom';
   else done.value='';
-
   done.onchange=()=>{
+    const sess = touch();
     if(done.value==='custom'){
       const v = prompt('Enter RIR (number, e.g. 2 or 3.5)', r.rir??'');
       if(v===null){
-        // revert selection
         const vv=(r.rir??'').toString().trim().replace('+','');
-        done.value = (vv==='1'||vv==='2'||vv==='3') ? vv : (vv ? 'custom' : '');
+        done.value=(vv==='1'||vv==='2'||vv==='3')?vv:(vv?'custom':'');
         return;
       }
       r.rir = v.toString().replace('+','').trim();
-      save(state);
-      render();
+      save(state); render();
       return;
     }
-    r.rir = done.value; // "", "1", "2", "3"
+    r.rir = done.value;
     save(state);
   };
   td5.appendChild(done);
 
-  tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(tdPin); tr.appendChild(td5);
+  // Remove button
+  const tdX=document.createElement('td');
+  const x=document.createElement('button'); x.className='rmbtn'; x.type='button'; x.textContent='✕';
+  x.onclick=()=>removeRow(r.id);
+  tdX.appendChild(x);
 
-  const tdDel=document.createElement('td');
-  const del=document.createElement('button');
-  del.className='xbtn rowdel';
-  del.type='button';
-  del.title='Remove this row (today only)';
-  del.textContent='✕';
-  del.onclick=(ev)=>{
-    ev.preventDefault();
-    ev.stopPropagation();
-    // remove from this date only
-    if(!sess || !Array.isArray(sess.rows)) return;
-    sess.rows = sess.rows.filter(x=>x.id!==r.id);
-    save(state);
-    renderWorkout();
-  };
-  tdDel.appendChild(del);
-  tr.appendChild(tdDel);
-
+  tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(tdPin); tr.appendChild(td5); tr.appendChild(tdX);
   return tr;
 }
 
-function loadPreset(force=false, persist=true){
-  const preset = state.presets[currentTab] || [];
-  const sess = ensureSession();
-  sess.dayType = currentTab;
+function loadPreset(force=false){
+  const active = getActiveSession();
+  const sess = active.saved ? active.sess : draft;
 
-  // Only prevent overwrite if user has REAL inputs (kg / pin / RIR) on this date
-  const hasReal = Array.isArray(sess.rows) && sess.rows.some(r=>{
-    return (r.weight && String(r.weight).trim()!=='') ||
-           (r.pin && String(r.pin).trim()!=='') ||
-           (r.rir && String(r.rir).trim()!=='');
-  });
+  // if saved + has real data and not forcing, don't overwrite
+  if(active.saved && sessionHasRealData(sess) && !force) return;
 
-  if(hasReal && !force){
-    if(persist) save(state);
-    renderWorkout();
-    return;
+  const rows = presetRowsFor(currentTab);
+  if(active.saved){
+    sess.dayType=currentTab;
+    sess.rows = rows;
+    save(state);
+  }else{
+    draft = { date: currentDate, dayType: currentTab, rows };
   }
-
-  sess.rows = preset.map(p=>({
-    ...p,
-    id: uid('row'),
-    weight: '',
-    pin: '',
-    rir: ''
-  }));
-
-  if(persist) save(state);
   renderWorkout();
 }
+
 function copyPrev(){
-  const prev=state.sessions[addDays(currentDate,-1)];
-  if(!prev?.rows?.length){alert('No previous day to copy.');return;}
-  const sess=ensureSession();
-  sess.rows=prev.rows.map(r=>({...r,id:uid('row'),rir:''}));
+  const prev = getSavedSession(addDays(currentDate,-1));
+  if(!prev?.rows?.length){ alert('No previous day to copy.'); return; }
+  const sess = touch();
+  sess.dayType = currentTab;
+  sess.rows = prev.rows.map(r=>({ ...r, id:uid('row'), rir:'' }));
   save(state); renderWorkout();
 }
+
 function clearDay(){
   if(!confirm('Clear this day?')) return;
-  const sess=ensureSession(); sess.rows=[]; save(state); renderWorkout();
-}
-function addRow(){
-  const sess=ensureSession(); sess.rows.push({id:uid('row'),exId:'',sets:'2',target:'',weight:'',pin:'',rir:''});
+  const sess = touch();
+  sess.rows = [];
   save(state); renderWorkout();
 }
+
+function addRow(){
+  const sess = touch();
+  sess.rows = sess.rows || [];
+  sess.rows.push({id:uid('row'),exId:'',sets:'2',target:'',weight:'',pin:'',rir:''});
+  save(state); renderWorkout();
+}
+
 function applyProgression(){
-  // RIR-based progression:
-  // RIR 1 (hard / 0-1): increase weight next time (or reps for bodyweight)
-  // RIR 2 (medium): keep weight
-  // RIR 3 (easy / 3+): increase reps or weight if reps already at target
-  const s = state;
-  const tab = currentTab;
-  if(!(tab==='strength'||tab==='fatloss'||tab==='volume')){ note.textContent='Go to a day tab first.'; return; }
-  const cur = s.sessions?.[tab]?.rows || [];
-  if(!cur.length){ note.textContent='Nothing to progress.'; return; }
+  if(!(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume')){ note.textContent='Go to a day tab first.'; return; }
+  const active = getActiveSession();
+  const sess = active.saved ? active.sess : null;
+  if(!sess?.rows?.length){ note.textContent='Nothing to progress.'; return; }
 
   const bump = (w)=>{
     const x=parseFloat(w);
     if(!isFinite(x)) return w;
-    // 2.5kg step default
-    return (Math.round((x+2.5)*10)/10).toString();
+    return (Math.round((x+INC_KG)*10)/10).toString();
   };
 
   let changed=0;
-  cur.forEach(r=>{
-    const rir = parseFloat(r.rir);
-    // ignore if no weight or rir entered
+  sess.rows.forEach(r=>{
+    const rir=parseFloat(r.rir);
     if(!isFinite(rir)) return;
-
-    // If weight-based exercise:
     if(r.weight!==undefined){
-      if(rir<=1){
-        // push weight up
-        r.weight = bump(r.weight);
-        changed++;
-      } else if(rir>=3){
-        // if easy, also push weight up slightly (same step) for simplicity
-        r.weight = bump(r.weight);
-        changed++;
-      } else {
-        // rir ~2 : keep weight
-      }
-      return;
+      if(rir<=1 || rir>=3){ r.weight=bump(r.weight); changed++; }
     }
   });
 
-  save(s);
+  save(state);
   render();
   note.textContent = changed ? `Progression applied (${changed} row${changed===1?'':'s'}).` : 'No rows had RIR entered.';
 }
+
 function saveSession(){
-  const sess=ensureSession();
-  sess.rows=sess.rows.filter(r=>r.exId);
-  sess.saved=true; sess.savedAt=Date.now();
+  const sess = touch();
+  sess.dayType = currentTab;
+  sess.rows = (sess.rows||[]).filter(r=>r.exId);
   save(state);
-  note.textContent='Saved.'; renderWorkout();
+  note.textContent='Saved.';
+  renderWorkout();
 }
 
+// Tabs
 tabs.forEach(b=>b.onclick=()=>{
   const next=b.dataset.tab;
   if(next===currentTab) return;
   currentTab=next;
-  // Update UI immediately
-  render();
-  // Auto-load the preset for workout day tabs (no prompt, no extra button)
+  if(currentTab==='manage' || currentTab==='history'){ render(); return; }
+
+  // Workout day tabs are hidden in CSS, but keep it safe
   if(daySelect && (currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume')) daySelect.value=currentTab;
-  if(currentTab==='strength'||currentTab==='fatloss'||currentTab==='volume'){
-    if(canAutoLoadPreset()) loadPreset();
+
+  // Switching day type should change exercises immediately unless real data exists
+  const active=getActiveSession();
+  if(active.saved && sessionHasRealData(active.sess)){
+    // don't overwrite, just change title
+    active.sess.dayType=currentTab;
+    save(state);
+    render();
+    return;
   }
+  loadPreset(true);
 });
+
+// Day dropdown
 if(daySelect){
   daySelect.onchange=()=>{
     const v=daySelect.value;
-    if(!v) return; // stay blank until user picks
+    if(!v) return;
     currentTab=v;
-    render();
-    loadPreset();
-    // Persist the chosen day type for this date even if rows are still blank
-    const sess=ensureSession();
-    sess.dayType=v;
-    save(state);
+    // If day has real data, don't overwrite rows
+    const active=getActiveSession();
+    if(active.saved && sessionHasRealData(active.sess)){
+      active.sess.dayType=v;
+      save(state);
+      render();
+      return;
+    }
+    loadPreset(true);
   };
 }
-prevDay.onclick=()=>{openDate(addDays(currentDate,-1));};
-nextDay.onclick=()=>{openDate(addDays(currentDate,1));};
-todayBtn.onclick=()=>{openDate(localISO());};
-dateInput.onchange=()=>{openDate(dateInput.value||localISO());};
 
+// Date controls — always use openDate()
+prevDay.onclick=()=>{ followToday=false; openDate(addDays(currentDate,-1)); };
+nextDay.onclick=()=>{ followToday=false; openDate(addDays(currentDate, 1)); };
+todayBtn.onclick=()=>{ followToday=true; openDate(localISO()); };
+dateInput.onchange=()=>{ followToday=false; openDate(dateInput.value||localISO()); };
 
-
-// If you open the app tomorrow, it should open on tomorrow (today's date).
-// When followToday is true, we auto-jump to today's date on focus/return.
 function syncToTodayIfNeeded(){
   if(!followToday) return;
-  const today=localISO();
-  if(today!==currentDate){
-    currentDate=today;
-    dateInput.value=currentDate;
-// Initial view is decided by openDate() after functions are defined.
-
-    render();
-  }
+  const t=localISO();
+  if(t!==currentDate) openDate(t);
 }
 window.addEventListener('focus', syncToTodayIfNeeded);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncToTodayIfNeeded(); });
 
-loadPresetBtn.onclick=loadPreset;
+// Buttons
+loadPresetBtn.onclick=()=>loadPreset(true);
 copyPrevBtn.onclick=copyPrev;
 clearBtn.onclick=clearDay;
 addRowBtn.onclick=addRow;
 progBtn.onclick=applyProgression;
 saveBtn.onclick=saveSession;
 
-// Manage
+if(back1) back1.onclick=()=>{ currentTab = plannedDayTypeFor(currentDate); if(daySelect) daySelect.value=currentTab; render(); };
+if(back2) back2.onclick=()=>{ currentTab = plannedDayTypeFor(currentDate); if(daySelect) daySelect.value=currentTab; render(); };
+
+// Manage: rename + delete + archive
+function purgeExercise(exId){
+  // remove from presets
+  Object.keys(state.presets||{}).forEach(k=>{
+    state.presets[k] = (state.presets[k]||[]).filter(r=>r.exId!==exId);
+  });
+  // remove from sessions
+  Object.keys(state.sessions||{}).forEach(d=>{
+    const s=state.sessions[d];
+    if(!s?.rows) return;
+    s.rows = s.rows.filter(r=>r.exId!==exId);
+  });
+}
+
 function renderManage(){
   exList.innerHTML='';
   const sorted=state.exercises.slice().sort((a,b)=> (a.archived===b.archived)?a.name.localeCompare(b.name):(a.archived?1:-1));
@@ -474,19 +512,36 @@ function renderManage(){
     const st=document.createElement('div'); st.className='pill'; st.textContent=ex.archived?'Archived':'Active';
 
     const rename=document.createElement('button'); rename.className='btn'; rename.textContent='Rename';
-    rename.onclick=()=>{const n=prompt('Rename exercise', ex.name); if(!n) return; ex.name=n.trim(); save(state); renderManage(); if(currentTab!=='manage') renderWorkout();};
+    rename.onclick=()=>{const n=prompt('Rename exercise', ex.name); if(!n) return; ex.name=n.trim(); save(state); renderManage();};
 
     const toggle=document.createElement('button'); toggle.className='btn'; toggle.textContent=ex.type==='time'?'Set to Reps':'Set to Time';
-    toggle.onclick=()=>{ex.type=ex.type==='time'?'reps':'time'; save(state); renderManage(); if(currentTab!=='manage') renderWorkout();};
+    toggle.onclick=()=>{ex.type=ex.type==='time'?'reps':'time'; save(state); renderManage();};
 
     const arch=document.createElement('button'); arch.className='btn danger'; arch.textContent=ex.archived?'Restore':'Archive';
-    arch.onclick=()=>{ex.archived=!ex.archived; save(state); renderManage(); if(currentTab!=='manage') renderWorkout();};
+    arch.onclick=()=>{ex.archived=!ex.archived; save(state); renderManage();};
 
-    div.appendChild(name);div.appendChild(t);div.appendChild(st);div.appendChild(rename);div.appendChild(toggle);div.appendChild(arch);
+    const del=document.createElement('button'); del.className='btn danger'; del.textContent='Delete';
+    del.onclick=()=>{
+      if(!confirm(`Delete "${ex.name}" everywhere? This removes it from presets and days.`)) return;
+      purgeExercise(ex.id);
+      state.exercises = state.exercises.filter(e=>e.id!==ex.id);
+      save(state);
+      renderManage();
+      // If current day contains it, refresh
+      render();
+    };
+
+    div.appendChild(name);div.appendChild(t);div.appendChild(st);
+    div.appendChild(rename);div.appendChild(toggle);div.appendChild(arch);div.appendChild(del);
     exList.appendChild(div);
   });
 }
-addExBtn.onclick=()=>{const n=(newName.value||'').trim(); if(!n) return; state.exercises.push({id:uid('ex'),name:n,type:newType.value,archived:false}); newName.value=''; save(state); renderManage();};
+addExBtn.onclick=()=>{
+  const n=(newName.value||'').trim(); if(!n) return;
+  state.exercises.push({id:uid('ex'),name:n,type:newType.value,archived:false});
+  newName.value='';
+  save(state); renderManage();
+};
 
 // History
 function renderHistory(){
@@ -497,8 +552,14 @@ function renderHistory(){
   const entries=Object.entries(state.sessions).filter(([iso,s])=> iso>=cutoff && s?.rows?.length).sort((a,b)=>a[0]<b[0]?1:-1);
   histList.innerHTML='';
   entries.forEach(([iso,sess])=>{
-    const rows=sess.rows.filter(r=>{const ex=exById(r.exId); if(!ex) return false; if(!q) return true; return ex.name.toLowerCase().includes(q);});
+    const rows=(sess.rows||[]).filter(r=>{
+      const ex=exById(r.exId);
+      if(!ex) return false;
+      if(!q) return true;
+      return ex.name.toLowerCase().includes(q);
+    });
     if(!rows.length) return;
+
     const card=document.createElement('div'); card.className='hcard';
     card.innerHTML=`<div class="hhead" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><div><strong>${iso}</strong> <span class="pill">${sess.dayType||'day'}</span></div><button class="xbtn" title="Delete this day" aria-label="Delete">✕</button></div>`;
 
@@ -508,32 +569,30 @@ function renderHistory(){
       if(!confirm(`Delete ${iso}?`)) return;
       delete state.sessions[iso];
       save(state);
-      // If we deleted the currently open day, refresh it
       renderHistory();
     };
     card.onclick=()=>{
       followToday=false;
-      currentDate=iso;
-      dateInput.value=currentDate;
-      // switch to that day's type if known
-      if(sess.dayType && (sess.dayType==='strength'||sess.dayType==='fatloss'||sess.dayType==='volume')){
-        currentTab=sess.dayType;
-      }
-      syncDaySelectForDate();
+      openDate(iso);
+      currentTab = (getSavedSession(iso)?.dayType) || plannedDayTypeFor(iso);
       render();
     };
+
     const list=document.createElement('div'); list.style.marginTop='8px'; list.style.display='grid'; list.style.gap='6px';
-    rows.forEach(r=>{const ex=exById(r.exId); const line=document.createElement('div'); line.className='muted small';
-      if(ex?.type==='time') line.textContent=`${ex.name}: ${r.sets} sets • ${r.target||''}s • RIR ${r.rir||''}`;
-      else line.textContent=`${ex.name}: ${r.sets}×${r.target||''} @ ${r.weight||''}kg • RIR ${r.rir||''}`;
+    rows.forEach(r=>{
+      const ex=exById(r.exId);
+      const line=document.createElement('div'); line.className='muted small';
+      line.textContent = `${ex.name}: ${r.sets}×${r.target||''} @ ${r.weight||''}kg • Pin ${r.pin||''} • RIR ${r.rir||''}`;
       list.appendChild(line);
     });
-    card.appendChild(list); histList.appendChild(card);
+    card.appendChild(list);
+    histList.appendChild(card);
   });
 }
-rangeSel.onchange=renderHistory; search.oninput=renderHistory;
+rangeSel.onchange=renderHistory;
+search.oninput=renderHistory;
 
-
+// Backup / restore
 function setupBackup(btnEl,fileEl){
   if(!btnEl || !fileEl) return;
   btnEl.onclick=()=>{
@@ -561,20 +620,21 @@ function setupBackup(btnEl,fileEl){
       state=incoming;
       save(state);
       alert('Imported.');
+      openDate(localISO());
       render();
     }catch(e){
       alert('Import failed.');
-    }finally{
-      fileEl.value='';
-    }
+    }finally{ fileEl.value=''; }
   };
 }
-
 setupBackup(exportBtn, importFile);
 setupBackup(exportBtn2, importFile2);
 
-
 // Service worker
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));}
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
+}
 
-openDate(currentDate);
+// Start
+openDate(localISO());
+render();
