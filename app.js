@@ -1,4 +1,5 @@
-// gym-full-stable-v1 (no service worker cache)
+// gym-full-stable-v2-no-autosave (no saving on date browse)
+
 
 const STORE_KEY="gym_full_stable_v1";
 const DAY_ORDER=["strength","fatloss","volume"];
@@ -49,6 +50,38 @@ function defaultState(){
 
 let state=load()||defaultState();
 save(state);
+
+// Draft sessions are kept in-memory only (not saved) until you press Save
+const drafts = {}; // { [iso]: {dayType, rows} }
+
+function getSavedSession(iso){
+  const s = state.sessions?.[iso];
+  return s && s.saved ? s : null;
+}
+function getDraftSession(iso){
+  return drafts[iso] || null;
+}
+function setDraftSession(iso, dayType, rows){
+  drafts[iso] = {dayType, rows};
+}
+function sessionForDate(iso){
+  // Prefer saved
+  const saved = state.sessions?.[iso];
+  if(saved && saved.saved){
+    return {kind:'saved', sess:saved};
+  }
+  // Otherwise draft (in-memory)
+  const d = getDraftSession(iso);
+  if(d){
+    return {kind:'draft', sess:{dayType:d.dayType, rows:d.rows, saved:false}};
+  }
+  // Create a fresh draft based on program decision + preset
+  const program = decideProgramForDate(iso);
+  const preset = (state.presets?.[program]||[]).map(p=>({ ...p, id:uid('row'), weight:'', pin:'', rir:'' }));
+  const fresh = {dayType:program, rows:preset, saved:false};
+  setDraftSession(iso, program, fresh.rows);
+  return {kind:'draft', sess:fresh};
+}
 
 // DOM
 const dateInput=document.getElementById('dateInput');
@@ -145,40 +178,24 @@ function loadPresetForProgram(iso, program, force=false){
 }
 
 function decideProgramForDate(iso){
-  const existing=state.sessions?.[iso];
-
-  // If user already saved this day, keep its dayType
-  if(existing?.saved && (existing.dayType==='strength'||existing.dayType==='fatloss'||existing.dayType==='volume')){
-    return existing.dayType;
+  // If already saved, keep its dayType
+  const saved = state.sessions?.[iso];
+  if(saved?.saved && (saved.dayType==='strength'||saved.dayType==='fatloss'||saved.dayType==='volume')){
+    return saved.dayType;
   }
-
-  // If day exists but has real data (user logged something), keep it (prevents accidental overwrite)
-  if(existing && hasRealData(existing) && existing.dayType){
-    return existing.dayType;
-  }
-
-  // Otherwise: use last saved day to rotate. If none, start strength.
-  const prior=mostRecentSavedBefore(iso);
+  // Use last saved day to rotate. If none, start strength.
+  const prior = mostRecentSavedBefore(iso);
   if(!prior) return "strength";
   return getNextProgram(prior.sess.dayType || "strength");
 }
 
 function openDate(iso){
-  currentDate=iso;
-  dateInput.value=currentDate;
+  currentDate = iso;
+  dateInput.value = currentDate;
 
-  const program=decideProgramForDate(currentDate);
-  currentProgram=program;
+  const { sess } = sessionForDate(currentDate);
+  currentProgram = sess.dayType;
 
-  const sess=ensureSession(currentDate);
-  sess.dayType=program;
-
-  // If not saved and no real data, force preset load so exercises change with date
-  if(!sess.saved && !hasRealData(sess)){
-    loadPresetForProgram(currentDate, program, true);
-  }
-
-  save(state);
   render();
 }
 
@@ -201,13 +218,15 @@ function render(){
 
 function renderWorkout(){
   setHeader();
-  const sess=ensureSession(currentDate);
+  const {kind, sess} = sessionForDate(currentDate);
+
   tbody.innerHTML='';
-  sess.rows.forEach(r=>tbody.appendChild(renderRow(sess,r)));
-  note.textContent = sess.saved ? "Saved ✔ (next day will advance)" : "Not saved yet (program will repeat until you Save).";
+  (sess.rows||[]).forEach(r=>tbody.appendChild(renderRow(kind, sess, r)));
+
+  note.textContent = (kind==='saved' && sess.saved) ? "Saved ✔ (next day will advance)" : "Not saved yet (this date won't be stored until you press Save).";
 }
 
-function renderRow(sess, r){
+function renderRow(kind, sess, r){
   const tr=document.createElement('tr');
 
   // Exercise select
@@ -223,7 +242,7 @@ function renderRow(sess, r){
     sel.appendChild(o);
   });
   sel.value=r.exId||'';
-  sel.onchange=()=>{r.exId=sel.value; save(state); renderWorkout();};
+  sel.onchange=()=>{r.exId=sel.value; if(kind==='saved'){save(state);}else{setDraftSession(currentDate,sess.dayType,sess.rows);} renderWorkout();};
   td1.appendChild(sel);
 
   // Sets
@@ -276,7 +295,7 @@ function renderRow(sess, r){
       const v=prompt('Enter RIR (e.g. 2 or 3.5)', r.rir??'');
       if(v===null){ return; }
       r.rir=v.toString().trim();
-      save(state); renderWorkout(); return;
+      if(kind==='saved'){save(state);}else{setDraftSession(currentDate,sess.dayType,sess.rows);} renderWorkout();return;
     }
     r.rir=done.value; save(state);
   };
@@ -291,9 +310,7 @@ function renderRow(sess, r){
   removeBtn.title='Remove this row (today only)';
   removeBtn.onclick=()=>{
     sess.rows = (sess.rows||[]).filter(x=>x.id!==r.id);
-    save(state);
-    renderWorkout();
-  };
+    if(kind==='saved'){save(state);}else{setDraftSession(currentDate,sess.dayType,sess.rows);} renderWorkout();};
   tdRemove.appendChild(removeBtn);
 
   tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(tdPin); tr.appendChild(td5); tr.appendChild(tdRemove);
@@ -301,37 +318,10 @@ function renderRow(sess, r){
 }
 
 function addRow(){
-  const sess=ensureSession(currentDate);
+  const {kind, sess} = sessionForDate(currentDate);
   sess.rows.push({id:uid('row'), exId:'', sets:'2', target:'', weight:'', pin:'', rir:''});
-  save(state); renderWorkout();
-}
-
-function copyPrev(){
-  const prevIso=addDays(currentDate,-1);
-  const prev=state.sessions?.[prevIso];
-  if(!prev?.rows?.length){alert('No previous day to copy.');return;}
-  const sess=ensureSession(currentDate);
-  sess.rows = prev.rows.map(r=>({ ...r, id:uid('row') }));
-  sess.saved=false;
-  save(state); renderWorkout();
-}
-
-function clearDay(){
-  if(!confirm('Clear this day?')) return;
-  const sess=ensureSession(currentDate);
-  sess.rows=[];
-  sess.saved=false;
-  save(state); renderWorkout();
-}
-
-function saveDay(){
-  const sess=ensureSession(currentDate);
-  // remove empty rows
-  sess.rows = (sess.rows||[]).filter(r=>r.exId);
-  sess.saved=true;
-  save(state);
-  note.textContent='Saved ✔';
-  // After save, program advances on next day. We don't auto-jump.
+  if(kind==='saved'){ state.sessions[currentDate].rows = sess.rows; save(state); }
+  else { setDraftSession(currentDate, sess.dayType, sess.rows); }
   renderWorkout();
 }
 
@@ -417,7 +407,7 @@ function renderHistory(){
   const q=(search.value||'').trim().toLowerCase();
 
   const entries=Object.entries(state.sessions)
-    .filter(([iso,s])=> iso>=cutoff && s?.rows?.length)
+    .filter(([iso,s])=> iso>=cutoff && s?.saved && s?.rows?.length)
     .sort((a,b)=>a[0]<b[0]?1:-1);
 
   histList.innerHTML='';
