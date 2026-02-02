@@ -100,11 +100,20 @@
     <div class="row gap" style="margin-top:10px; flex-wrap:wrap">
       <button class="btn" id="exportBtn">Export JSON</button>
       <label class="btn">Import JSON <input id="importFile" type="file" accept="application/json" hidden></label>
+      <button class="btn" id="pasteBtn">Paste JSON</button>
       <div class="muted small" style="align-self:center">Use this to move data to another device.</div>
     </div>
-  </section>
+  <div id="pasteWrap" class="hidden" style="margin-top:12px">
+    <textarea class="input" id="pasteArea" placeholder="Paste backup JSON here" style="min-height:160px"></textarea>
+    <div class="row gap" style="margin-top:10px">
+      <button class="btn accent" id="pasteImportBtn">Import pasted JSON</button>
+      <button class="btn danger" id="pasteCancelBtn">Cancel</button>
+    </div>
+  </div>
+</section>
 
-  <section class="card hidden" id="historyCard">
+<section class="card hidden" id="historyCard">
+
     <div class="cardhead">
       <div class="cardtitle">History</div>
       <button class="btn" id="backFromHistory">← Workout</button>
@@ -123,7 +132,7 @@
 
   <footer class="footer">
     <div>Stable build: no service-worker cache.</div>
-    <div class="muted small">Build: gym-full-stable-v2-no-autosave</div>
+    <div class="muted small">Build: gym-full-stable-v3-import-fix</div>
   </footer>
 </main>
 

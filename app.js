@@ -1,4 +1,5 @@
-// gym-full-stable-v2-no-autosave (no saving on date browse)
+// gym-full-stable-v3-import-fix (import works with older backups + paste)
+
 
 
 const STORE_KEY="gym_full_stable_v1";
@@ -116,6 +117,11 @@ const exList=document.getElementById('exList');
 
 const exportBtn=document.getElementById('exportBtn');
 const importFile=document.getElementById('importFile');
+const pasteBtn=document.getElementById('pasteBtn');
+const pasteWrap=document.getElementById('pasteWrap');
+const pasteArea=document.getElementById('pasteArea');
+const pasteImportBtn=document.getElementById('pasteImportBtn');
+const pasteCancelBtn=document.getElementById('pasteCancelBtn');
 
 const rangeSel=document.getElementById('rangeSel');
 const search=document.getElementById('search');
@@ -446,6 +452,46 @@ function renderHistory(){
 rangeSel.onchange=renderHistory;
 search.oninput=renderHistory;
 
+function normalizeImport(incoming){
+  // Accept older schemas and convert to current: {exercises,presets,sessions}
+  // sessions rows should be array of {exId,sets,target,weight,pin,rir,id}
+  if(!incoming || typeof incoming!=='object') return null;
+
+  // If it already matches current schema, just ensure fields exist.
+  if(incoming.exercises && incoming.presets && incoming.sessions){
+    // normalize session flags
+    Object.keys(incoming.sessions||{}).forEach(d=>{
+      const s=incoming.sessions[d];
+      if(s && s.saved===undefined && s.done!==undefined) s.saved=!!s.done;
+      if(s && s.dayType===undefined && s.type) s.dayType=s.type;
+      if(s && !Array.isArray(s.rows)) s.rows=[];
+    });
+    return incoming;
+  }
+
+  // If it is from the minimal clean build: {sessions:{date:{type,rows,done}}}
+  if(incoming.sessions && !incoming.exercises && !incoming.presets){
+    const st = defaultState();
+    Object.keys(incoming.sessions).forEach(d=>{
+      const s=incoming.sessions[d];
+      const dayType = s?.type || 'strength';
+      const rows = (s?.rows||[]).map(r=>({
+        id: uid('row'),
+        exId: st.exercises.find(e=>e.name===r.name)?.id || '',
+        sets: String(r.sets ?? ''),
+        target: String(r.reps ?? r.target ?? ''),
+        weight: String(r.kg ?? r.weight ?? ''),
+        pin: String(r.pin ?? ''),
+        rir: String(r.rir ?? '')
+      })).filter(r=>r.exId);
+      st.sessions[d] = {dayType, rows, saved: !!(s?.done)};
+    });
+    return st;
+  }
+
+  return null;
+}
+
 // Backup / Restore
 exportBtn.onclick=()=>{
   const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
@@ -463,18 +509,23 @@ importFile.onchange=async()=>{
   if(!f) return;
   try{
     const text=await f.text();
-    const incoming=JSON.parse(text);
-    if(!incoming?.exercises || !incoming?.sessions || !incoming?.presets){
-      alert('Backup not recognized.');
+    const raw=JSON.parse(text);
+    const incoming=normalizeImport(raw);
+    if(!incoming){
+      alert('Backup not recognized. Export a JSON from this app, or paste a compatible backup.');
       return;
     }
     if(!confirm('Import backup? This replaces your data on this device.')) return;
     state=incoming;
     save(state);
+    // clear drafts if present
+    if(typeof drafts==='object'){
+      Object.keys(drafts).forEach(k=>delete drafts[k]);
+    }
     alert('Imported.');
     openDate(localISO());
   }catch(e){
-    alert('Import failed.');
+    alert('Import failed. Make sure the file is valid JSON.');
   }finally{
     importFile.value='';
   }
@@ -482,3 +533,42 @@ importFile.onchange=async()=>{
 
 // Init
 openDate(currentDate);
+
+
+// Paste JSON import (works on iOS when file picker is blocked)
+if(pasteBtn){
+  pasteBtn.onclick=()=>{
+    pasteWrap.classList.remove('hidden');
+    pasteArea.focus();
+  };
+}
+if(pasteCancelBtn){
+  pasteCancelBtn.onclick=()=>{
+    pasteArea.value='';
+    pasteWrap.classList.add('hidden');
+  };
+}
+if(pasteImportBtn){
+  pasteImportBtn.onclick=()=>{
+    try{
+      const raw=JSON.parse(pasteArea.value||'');
+      const incoming=normalizeImport(raw);
+      if(!incoming){
+        alert('Backup not recognized.');
+        return;
+      }
+      if(!confirm('Import pasted backup? This replaces your data on this device.')) return;
+      state=incoming;
+      save(state);
+      if(typeof drafts==='object'){
+        Object.keys(drafts).forEach(k=>delete drafts[k]);
+      }
+      pasteArea.value='';
+      pasteWrap.classList.add('hidden');
+      alert('Imported.');
+      openDate(localISO());
+    }catch(e){
+      alert('Invalid JSON.');
+    }
+  };
+}
