@@ -241,6 +241,16 @@ function openDate(iso){
   currentDate = iso;
   dateInput.value = currentDate;
 
+  // If this date is not saved, and the draft has no real user data,
+  // discard it so the program can be recalculated from latest saved history.
+  const saved = state.sessions?.[currentDate];
+  if(!(saved && saved.saved)){
+    const d = drafts?.[currentDate];
+    if(d && !draftHasRealData(d)){
+      delete drafts[currentDate];
+    }
+  }
+
   const { sess } = sessionForDate(currentDate);
   currentProgram = sess.dayType;
 
@@ -404,18 +414,22 @@ function clearDay(){
 function saveDay(){
   const { sess } = sessionForDate(currentDate);
 
-  // Remove empty rows (no exercise)
   const rows = (sess.rows||[]).filter(r=>r.exId);
+  if(rows.length===0){
+    alert('Nothing to save yet. Select at least one exercise.');
+    return;
+  }
 
-  state.sessions[currentDate] = {
-    dayType: sess.dayType,
-    rows,
-    saved: true
-  };
-
+  state.sessions[currentDate] = { dayType: sess.dayType, rows, saved: true };
   delete drafts[currentDate];
+
+  // Critical: if you saved an earlier day, future unsaved days must re-calc
+  invalidateDraftsAfter(currentDate);
+
   save(state);
   renderWorkout();
+
+  // If user is saving a past date while currently browsing, rotation should update immediately when they open the next day.
 }
 
 
@@ -600,16 +614,16 @@ importFile.onchange=async()=>{
     const raw=JSON.parse(text);
     const incoming=normalizeImport(raw);
     if(!incoming){
-      alert('Backup not recognized. Export a JSON from this app, or paste a compatible backup.');
+      alert('Backup not recognized.');
       return;
     }
     if(!confirm('Import backup? This replaces your data on this device.')) return;
     state=incoming;
     save(state);
-    // clear drafts if present
-    if(typeof drafts==='object'){
-      Object.keys(drafts).forEach(k=>delete drafts[k]);
-    }
+
+    // clear drafts
+    Object.keys(drafts||{}).forEach(k=>delete drafts[k]);
+
     alert('Imported.');
     openDate(localISO());
   }catch(e){
