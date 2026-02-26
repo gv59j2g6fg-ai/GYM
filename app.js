@@ -241,49 +241,7 @@ function renderRow(r){
   tdKeep.appendChild(chk);
 
   // Timer cell (only for time exercises)
-  const tdTimer=document.createElement('td');
-  const exNow=exById(r.exId);
-  if(exNow?.type==='time' && (exNow?.name!=="Farmer's Walk")){
-    const wrap=document.createElement('div'); wrap.style.display='grid'; wrap.style.gap='6px';
-
-    // Rest input
-    const rest=document.createElement('input'); rest.className='input'; rest.inputMode='numeric';
-    rest.placeholder='Rest s';
-    rest.value=(r.rest??'60').toString();
-    rest.oninput=()=>{r.rest=rest.value; markDirty();};
-    wrap.appendChild(rest);
-
-    // Start/Stop + display
-    const row2=document.createElement('div'); row2.style.display='flex'; row2.style.gap='6px'; row2.style.alignItems='center';
-    const btn=document.createElement('button'); btn.type='button'; btn.className='timerBtn';
-    const disp=document.createElement('div'); disp.className='timerDisplay'; disp.style.minWidth='64px'; disp.textContent='';
-
-    const isActive = activeTimer && activeTimer.rowId===r.id;
-    btn.textContent = isActive ? (activeTimer.phase==='walk'?'Walking…':'Rest…') : 'Start';
-    if(isActive) btn.classList.add('danger'); else btn.classList.remove('danger');
-
-    btn.onclick=()=>{ if(activeTimer && activeTimer.rowId===r.id){ stopTimer(); renderWorkout(); } else { startTimerForRow(r); renderWorkout(); } };
-    row2.appendChild(btn);
-    row2.appendChild(disp);
-    wrap.appendChild(row2);
-
-    // live updates
-    if(isActive){
-      disp.textContent = formatMMSS(activeTimer.remaining);
-    }
-
-    tdTimer.appendChild(wrap);
-  } else {
-    tdTimer.textContent='—';
-  }
-
-  // Remove row (draft only)
-  const tdRemove=document.createElement('td');
-  const rm=document.createElement('button'); rm.className='xbtn'; rm.type='button'; rm.textContent='✕'; rm.title='Remove from this day (draft)';
-  rm.onclick=()=>{ draft.rows = (draft.rows||[]).filter(x=>x.id!==r.id); markDirty(); renderWorkout(); };
-  tdRemove.appendChild(rm);
-
-  tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6); tr.appendChild(tdKeep); tr.appendChild(tdTimer); tr.appendChild(tdRemove);
+tr.appendChild(tdRemove);
   return tr;
 }
 
