@@ -1,33 +1,33 @@
-const STORE_KEY='gym_v18_final_clean_state';
-const STORE_KEY_TEMP='gym_v18_final_clean_state_temp';
+const STORE_KEY='gym_v20_final_clean_state';
+const STORE_KEY_TEMP='gym_v20_final_clean_state_temp';
 const INC_KG=2.5;
 const PIN_INC=1;
 const MAIN_DAY_ORDER=['strength','fatloss','volume'];
 
 const EXERCISE_DEFS=[
-  {name:'4-Way Shoulder', type:'reps'},
-  {name:'Arnold Press', type:'reps'},
-  {name:'Bench Press', type:'reps'},
-  {name:'Bent Over Row', type:'reps'},
-  {name:'Cable Triceps Pushdown', type:'reps'},
-  {name:'Close-Grip Dumbbell Press', type:'reps'},
-  {name:'Deadlift', type:'reps'},
-  {name:'Dumbbell Fly', type:'reps'},
-  {name:'Dumbbell Press', type:'reps'},
-  {name:"Farmer's Walk", type:'time'},
-  {name:'Face Pull', type:'reps'},
-  {name:'Hammer Curl', type:'reps'},
-  {name:'Incline Bench Press', type:'reps'},
-  {name:'Lat Pulldown', type:'reps'},
-  {name:'Lateral Raise', type:'reps'},
-  {name:'Palm Curl', type:'reps'},
-  {name:'Rear Delt Raise', type:'reps'},
-  {name:'Romanian Deadlift', type:'reps'},
-  {name:'Seated Cable Row', type:'reps'},
-  {name:'Shoulder Press', type:'reps'},
-  {name:'Skull Crusher', type:'reps'},
-  {name:'Squat', type:'reps'},
-  {name:'Sumo Squat', type:'reps'},
+  {name:'4-Way Shoulder', type:'reps', role:'shoulder'},
+  {name:'Arnold Press', type:'reps', role:'shoulder'},
+  {name:'Bench Press', type:'reps', role:'push_primary'},
+  {name:'Bent Over Row', type:'reps', role:'pull_secondary'},
+  {name:'Cable Triceps Pushdown', type:'reps', role:'arms'},
+  {name:'Close-Grip Dumbbell Press', type:'reps', role:'arms'},
+  {name:'Deadlift', type:'reps', role:'lower_primary'},
+  {name:'Dumbbell Fly', type:'reps', role:'chest_iso'},
+  {name:'Dumbbell Press', type:'reps', role:'push_secondary'},
+  {name:"Farmer's Walk", type:'time', role:'finisher'},
+  {name:'Face Pull', type:'reps', role:'shoulder'},
+  {name:'Hammer Curl', type:'reps', role:'arms'},
+  {name:'Incline Bench Press', type:'reps', role:'push_secondary'},
+  {name:'Lat Pulldown', type:'reps', role:'pull_secondary'},
+  {name:'Lateral Raise', type:'reps', role:'shoulder'},
+  {name:'Palm Curl', type:'reps', role:'arms'},
+  {name:'Rear Delt Raise', type:'reps', role:'shoulder'},
+  {name:'Romanian Deadlift', type:'reps', role:'lower_secondary'},
+  {name:'Seated Cable Row', type:'reps', role:'pull_secondary'},
+  {name:'Shoulder Press', type:'reps', role:'push_secondary'},
+  {name:'Skull Crusher', type:'reps', role:'arms'},
+  {name:'Squat', type:'reps', role:'lower_primary'},
+  {name:'Sumo Squat', type:'reps', role:'lower_primary'},
 ];
 
 const DEFAULT_DAY_SPECS={
@@ -70,33 +70,59 @@ const DAY_ORDER_HINTS={
   recovery:['Bench Press','Lat Pulldown','Hammer Curl','Cable Triceps Pushdown'],
 };
 
-const EXERCISE_CLASS={
-  'Deadlift':'primary',
-  'Squat':'primary',
-  'Bench Press':'primary',
-  'Sumo Squat':'primary',
-  'Romanian Deadlift':'secondary',
-  'Bent Over Row':'secondary',
-  'Shoulder Press':'secondary',
-  'Incline Bench Press':'secondary',
-  'Lat Pulldown':'secondary',
-  'Seated Cable Row':'secondary',
-  'Dumbbell Press':'secondary',
-  'Close-Grip Dumbbell Press':'isolation',
-  'Arnold Press':'isolation',
-  'Lateral Raise':'isolation',
-  'Rear Delt Raise':'isolation',
-  'Face Pull':'isolation',
-  'Hammer Curl':'isolation',
-  'Palm Curl':'isolation',
-  'Cable Triceps Pushdown':'isolation',
-  'Skull Crusher':'isolation',
-  'Dumbbell Fly':'isolation',
-  '4-Way Shoulder':'isolation',
+const EXERCISE_ROLE={
+  'Deadlift':'lower_primary',
+  'Squat':'lower_primary',
+  'Sumo Squat':'lower_primary',
+  'Bench Press':'push_primary',
+  'Bent Over Row':'pull_secondary',
+  'Romanian Deadlift':'lower_secondary',
+  'Shoulder Press':'push_secondary',
+  'Incline Bench Press':'push_secondary',
+  'Lat Pulldown':'pull_secondary',
+  'Seated Cable Row':'pull_secondary',
+  'Dumbbell Press':'push_secondary',
+  'Arnold Press':'shoulder',
+  'Lateral Raise':'shoulder',
+  'Rear Delt Raise':'shoulder',
+  'Face Pull':'shoulder',
+  '4-Way Shoulder':'shoulder',
+  'Dumbbell Fly':'chest_iso',
+  'Close-Grip Dumbbell Press':'arms',
+  'Hammer Curl':'arms',
+  'Palm Curl':'arms',
+  'Cable Triceps Pushdown':'arms',
+  'Skull Crusher':'arms',
   "Farmer's Walk":'finisher',
 };
 
-const CLASS_SCORE={primary:10, secondary:20, isolation:30, finisher:40};
+const DAY_ROLE_ORDER={
+  strength:['lower_primary','push_primary','pull_secondary','push_secondary','shoulder','chest_iso','arms','finisher','other'],
+  fatloss:['pull_secondary','push_secondary','chest_iso','shoulder','arms','finisher','other'],
+  volume:['lower_primary','lower_secondary','push_primary','push_secondary','pull_secondary','chest_iso','shoulder','arms','finisher','other'],
+  recovery:['push_primary','pull_secondary','push_secondary','chest_iso','shoulder','arms','finisher','other'],
+};
+
+function roleLabel(role){
+  if(role==='lower_primary' || role==='push_primary') return 'Compound Primary';
+  if(role==='lower_secondary' || role==='pull_secondary' || role==='push_secondary') return 'Compound Secondary';
+  if(role==='finisher') return 'Finisher';
+  return 'Isolation';
+}
+function storedRoleFromOption(option){
+  const v=normalizeName(option).toLowerCase();
+  if(v==='primary' || v==='compound primary') return 'push_primary';
+  if(v==='secondary' || v==='compound secondary') return 'push_secondary';
+  if(v==='finisher') return 'finisher';
+  if(v==='isolation') return 'shoulder';
+  return '';
+}
+function roleOptionFromStored(role){
+  if(role==='lower_primary' || role==='push_primary') return 'primary';
+  if(role==='lower_secondary' || role==='pull_secondary' || role==='push_secondary') return 'secondary';
+  if(role==='finisher') return 'finisher';
+  return 'isolation';
+}
 
 function uid(p='id'){ return `${p}_${Math.random().toString(16).slice(2)}_${Date.now()}`; }
 function localISO(d=new Date()){ const off=d.getTimezoneOffset(); return new Date(d.getTime()-off*60000).toISOString().slice(0,10); }
@@ -130,7 +156,7 @@ function ensureDefaultExercises(exercises){
   EXERCISE_DEFS.forEach(def=>{
     const key=normalizeName(def.name).toLowerCase();
     if(!byName.has(key)){
-      const ex={id:uid('ex'), name:def.name, type:def.type, archived:false};
+      const ex={id:uid('ex'), name:def.name, type:def.type, role:def.role || '', archived:false};
       exercises.push(ex);
       byName.set(key, ex);
     }
@@ -157,6 +183,7 @@ function migrateState(s){
   if(!s || typeof s!=='object') return defaultState();
   s.exercises=Array.isArray(s.exercises)?s.exercises:[];
   ensureDefaultExercises(s.exercises);
+  s.exercises.forEach(ex=>{ if(!ex.role) ex.role=EXERCISE_ROLE[normalizeName(ex.name)] || roleForName(ex.name); });
   s.templates=makeDefaultTemplates(s.exercises);
   s.templateLive=(s.templateLive && typeof s.templateLive==='object') ? s.templateLive : {strength:[], fatloss:[], volume:[], recovery:[]};
   ['strength','fatloss','volume','recovery'].forEach(day=>{ if(!Array.isArray(s.templateLive[day])) s.templateLive[day]=[]; });
@@ -191,6 +218,7 @@ const draftStatus=document.getElementById('draftStatus');
 const note=document.getElementById('note');
 const newName=document.getElementById('newName');
 const newType=document.getElementById('newType');
+const newRole=document.getElementById('newRole');
 const addExBtn=document.getElementById('addExBtn');
 const exList=document.getElementById('exList');
 const rangeSel=document.getElementById('rangeSel');
@@ -212,17 +240,44 @@ function exById(id){ return state.exercises.find(e=>e.id===id) || null; }
 function exNameById(id){ return normalizeName(exById(id)?.name || ''); }
 function activeExercises(){ return state.exercises.filter(e=>!e.archived).slice().sort((a,b)=>normalizeName(a.name).localeCompare(normalizeName(b.name), undefined, {numeric:true, sensitivity:'base'})); }
 function dayHintIndex(day, name){ const arr=DAY_ORDER_HINTS[day] || []; const idx=arr.findIndex(x=>normalizeName(x).toLowerCase()===normalizeName(name).toLowerCase()); return idx>=0 ? idx : 999; }
-function classScoreForName(name){ return CLASS_SCORE[EXERCISE_CLASS[normalizeName(name)] || 'isolation'] || 30; }
+function roleForName(name){
+  const n=normalizeName(name);
+  const ex=state?.exercises?.find?.(e=>normalizeName(e.name).toLowerCase()===n.toLowerCase());
+  if(ex?.role) return ex.role;
+  if(EXERCISE_ROLE[n]) return EXERCISE_ROLE[n];
+  const lower=n.toLowerCase();
+  if(lower.includes('farmer')) return 'finisher';
+  if(lower.includes('curl') || lower.includes('tricep') || lower.includes('skull')) return 'arms';
+  if(lower.includes('raise') || lower.includes('face pull') || lower.includes('arnold')) return 'shoulder';
+  if(lower.includes('fly')) return 'chest_iso';
+  if(lower.includes('row') || lower.includes('pull')) return 'pull_secondary';
+  if(lower.includes('deadlift')) return lower.includes('romanian') ? 'lower_secondary' : 'lower_primary';
+  if(lower.includes('squat') || lower.includes('leg press') || lower.includes('lunge')) return 'lower_primary';
+  if(lower.includes('bench')) return lower.includes('incline') ? 'push_secondary' : 'push_primary';
+  if(lower.includes('press')) return 'push_secondary';
+  return 'other';
+}
+function roleRank(dayType, name){
+  const role=roleForName(name);
+  const order=DAY_ROLE_ORDER[dayType] || DAY_ROLE_ORDER.strength;
+  const idx=order.indexOf(role);
+  return idx>=0 ? idx : order.length;
+}
 function sortRowsForDay(dayType, rows){
-  return (rows||[]).sort((a,b)=>{
+  const list=(rows||[]);
+  list.sort((a,b)=>{
     const an=exNameById(a.exId);
     const bn=exNameById(b.exId);
+    const af=an.toLowerCase()==="farmer's walk";
+    const bf=bn.toLowerCase()==="farmer's walk";
+    if(af!==bf) return af ? 1 : -1;
+    const ar=roleRank(dayType, an), br=roleRank(dayType, bn);
+    if(ar!==br) return ar-br;
     const ah=dayHintIndex(dayType, an), bh=dayHintIndex(dayType, bn);
     if(ah!==bh) return ah-bh;
-    const ac=classScoreForName(an), bc=classScoreForName(bn);
-    if(ac!==bc) return ac-bc;
     return an.localeCompare(bn, undefined, {numeric:true, sensitivity:'base'});
   });
+  return list;
 }
 function fmtDay(t){ return t==='strength'?'Strength Day':t==='fatloss'?'Fat Loss Day':t==='volume'?'Volume Day':t==='recovery'?'Recovery Day':'Workout'; }
 function nextDayType(afterType){ const idx=MAIN_DAY_ORDER.indexOf(afterType || 'strength'); return idx>=0 ? MAIN_DAY_ORDER[(idx+1)%MAIN_DAY_ORDER.length] : 'strength'; }
@@ -452,13 +507,16 @@ function renderManage(){
     const name=document.createElement('div'); name.style.fontWeight='800'; name.textContent=ex.name;
     const t=document.createElement('div'); t.className='pill'; t.textContent=ex.type==='time' ? 'Time (sec)' : 'Reps + Weight';
     const st=document.createElement('div'); st.className='pill'; st.textContent=ex.archived ? 'Archived' : 'Active';
+    const role=document.createElement('div'); role.className='pill'; role.textContent=roleLabel(ex.role || roleForName(ex.name));
     const rename=document.createElement('button'); rename.className='btn'; rename.textContent='Rename';
     rename.onclick=()=>{ const n=prompt('Rename exercise', ex.name); if(!n) return; ex.name=normalizeName(n); sortExercisesInPlace(state.exercises); saveState(state); renderManage(); };
     const toggle=document.createElement('button'); toggle.className='btn'; toggle.textContent=ex.type==='time' ? 'Set to Reps' : 'Set to Time';
     toggle.onclick=()=>{ ex.type=ex.type==='time' ? 'reps' : 'time'; saveState(state); renderManage(); };
+    const setRole=document.createElement('button'); setRole.className='btn'; setRole.textContent='Change order';
+    setRole.onclick=()=>{ const pick=prompt('Set order type: primary, secondary, isolation, finisher', roleOptionFromStored(ex.role || roleForName(ex.name))); if(!pick) return; const roleVal=storedRoleFromOption(pick); if(!roleVal){ alert('Use: primary, secondary, isolation, or finisher'); return; } ex.role=roleVal; saveState(state); renderManage(); };
     const arch=document.createElement('button'); arch.className='btn danger'; arch.textContent=ex.archived ? 'Restore' : 'Archive';
     arch.onclick=()=>{ ex.archived=!ex.archived; sortExercisesInPlace(state.exercises); saveState(state); renderManage(); };
-    div.append(name,t,st,rename,toggle,arch);
+    div.append(name,t,role,st,rename,toggle,setRole,arch);
     exList.appendChild(div);
   }
 }
@@ -466,9 +524,10 @@ addExBtn.onclick=()=>{
   const n=normalizeName(newName.value||'');
   if(!n) return;
   if(state.exercises.some(ex=>normalizeName(ex.name).toLowerCase()===n.toLowerCase())){ alert('That exercise already exists.'); return; }
-  state.exercises.push({id:uid('ex'), name:n, type:newType.value, archived:false});
+  state.exercises.push({id:uid('ex'), name:n, type:newType.value, role:storedRoleFromOption(newRole.value), archived:false});
   sortExercisesInPlace(state.exercises);
   newName.value='';
+  newRole.value='isolation';
   saveState(state);
   renderManage();
 };

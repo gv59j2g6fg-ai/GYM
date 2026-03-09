@@ -37,3 +37,5 @@
 .t th:nth-child(8), .t td:nth-child(8){min-width:46px;text-align:center}
 .input,.rirSelect{font-size:14px}
 @media (max-width:700px){.wrap{padding:10px}.card{padding:12px}.btn{padding:9px 11px}.t th,.t td{padding:8px}}
+
+#newRole{min-width:170px}

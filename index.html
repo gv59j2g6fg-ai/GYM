@@ -87,9 +87,15 @@
       <option value="reps">Reps + Weight</option>
       <option value="time">Time (seconds)</option>
     </select>
+    <select class="input" id="newRole">
+      <option value="primary">Compound Primary</option>
+      <option value="secondary">Compound Secondary</option>
+      <option value="isolation" selected>Isolation</option>
+      <option value="finisher">Finisher</option>
+    </select>
     <button class="btn" id="addExBtn">Add</button>
   </div>
-  <div class="muted small" style="margin-top:8px">Exercise library stays alphabetical. Workout days stay in priority order.</div>
+  <div class="muted small" style="margin-top:8px">Exercise library stays alphabetical. New exercises ask for order type so workout days stay in priority order. Farmer's Walk always stays last.</div>
   <div id="exList" class="list"></div>
 </section>
 
@@ -113,7 +119,7 @@
 
 <footer class="footer">
   <div>Offline-first. Data stays on your device.</div>
-  <div class="muted small">Build: v18-final-clean-setup</div>
+  <div class="muted small">Build: v20-clean-role-prompt</div>
 </footer>
 
 </main></body></html>
